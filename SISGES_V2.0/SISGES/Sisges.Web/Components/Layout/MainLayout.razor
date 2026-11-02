@@ -1,0 +1,184 @@
+@inherits LayoutComponentBase
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject ISqlConnectionFactory ConnectionFactory
+@inject IGrifoContext GrifoContext
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedLocalStorage LocalStorage
+
+<!-- ═══════════════ SIDEBAR COREUI (FIJO 256PX / PANEL EN MÓVIL) ═══════════════ -->
+<aside class="sidebar sidebar-dark sidebar-fixed" id="sidebar">
+    <!-- Brand / Cabecera Sidebar -->
+    <div class="sidebar-brand">
+        <i class="bi bi-fuel-pump-fill fs-4 text-primary me-2"></i>
+        <div class="d-flex align-items-center">
+            <span class="fs-5 fw-bold text-white me-2">SISGES</span>
+            <span class="badge bg-primary px-2 py-1" style="font-size: 0.7rem;">v2.0</span>
+        </div>
+        <button class="btn btn-sm text-white-50 ms-auto d-lg-none" type="button" onclick="closeSidebar()" title="Cerrar menú" aria-label="Cerrar menú">
+            <i class="bi bi-x-lg fs-5"></i>
+        </button>
+    </div>
+
+    <!-- Menú de Navegación Completo (75+ Pantallas) -->
+    <NavMenu />
+</aside>
+
+<!-- Fondo oscuro detrás del sidebar en móvil (click = cerrar) -->
+<div class="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- ═══════════════ CONTENIDO PRINCIPAL WRAPPER ═══════════════ -->
+<div class="wrapper">
+
+    <!-- HEADER SUPERIOR ESTILO COREUI -->
+    <header class="header header-sticky p-0 shadow-sm">
+        <div class="container-fluid px-2 px-md-4 py-2 d-flex align-items-center gap-2 flex-nowrap">
+
+            <!-- Botón Hamburguesa -->
+            <button class="btn btn-outline-secondary btn-sm border-0 px-2 py-1 flex-shrink-0" type="button" onclick="toggleSidebar()" title="Ocultar / Mostrar Barra Lateral" aria-label="Ocultar / Mostrar Barra Lateral">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+
+            <!-- SELECTOR DE GRIFO ACTIVO EN EL HEADER -->
+            <div class="d-flex align-items-center flex-grow-1 min-w-0">
+                <span class="badge bg-dark me-2 py-2 px-2 d-none d-sm-inline-flex align-items-center flex-shrink-0">
+                    <i class="bi bi-geo-alt-fill text-danger me-1"></i> Grifo:
+                </span>
+                <select class="form-select form-select-sm fw-bold border-primary shadow-none header-grifo-select"
+                        aria-label="Grifo activo"
+                        @bind="grifoActivo" @bind:after="OnGrifoCambiado">
+                    @foreach (var estacion in estaciones)
+                    {
+                        <option value="@estacion.Id">@estacion.Nombre (@estacion.Id)</option>
+                    }
+                </select>
+            </div>
+
+            <!-- ACCIONES DERECHA: TEMA Y PERFIL -->
+            <ul class="header-nav d-flex align-items-center list-unstyled mb-0 gap-2 gap-md-3 ms-auto flex-shrink-0">
+
+                <!-- Toggle Modo Claro / Oscuro -->
+                <li class="nav-item">
+                    <button class="btn btn-outline-secondary btn-sm rounded-circle p-2 border-0" type="button" onclick="toggleCoreUiTheme()" title="Modo Claro / Oscuro" aria-label="Modo Claro / Oscuro">
+                        <i class="bi bi-moon-stars-fill text-warning fs-6"></i>
+                    </button>
+                </li>
+
+                <!-- Separador -->
+                <li class="border-start ps-2 d-none d-md-block" style="height: 24px;"></li>
+
+                <!-- Perfil de Usuario -->
+                <li class="nav-item d-flex align-items-center">
+                    <div class="avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold shadow-sm flex-shrink-0"
+                         style="width: 36px; height: 36px; font-size: 0.85rem;">
+                        SA
+                    </div>
+                    <div class="ms-2 d-none d-md-block text-start lh-1">
+                        <div class="fw-bold text-nowrap" style="font-size: 0.82rem;">Super Admin</div>
+                        <small class="text-success fw-semibold text-nowrap" style="font-size: 0.7rem;">● En Línea (24/7)</small>
+                    </div>
+                </li>
+            </ul>
+        </div>
+
+        <!-- BREADCRUMBS -->
+        <div class="container-fluid px-2 px-md-4 py-2 bg-body-tertiary border-top">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb my-0 small">
+                    <li class="breadcrumb-item"><a href="" class="text-decoration-none">Inicio</a></li>
+                    <li class="breadcrumb-item active fw-semibold text-body-secondary">Dashboard Principal</li>
+                </ol>
+            </nav>
+        </div>
+    </header>
+
+    <!-- CUERPO PRINCIPAL DE LA PÁGINA -->
+    <main class="body flex-grow-1 px-2 px-md-4 py-3">
+        <div class="container-fluid p-0">
+            @Body
+        </div>
+    </main>
+
+    <!-- FOOTER ESTILO COREUI -->
+    <footer class="footer px-2 px-md-4 py-3 border-top text-body-secondary small d-flex flex-wrap gap-2 justify-content-center justify-content-md-between align-items-center text-center text-md-start mt-auto">
+        <div>
+            <strong>SISGES V2.0- Krl08 </strong> &copy; 2026 - Gestión de Estaciones de Servicio.
+        </div>
+        @* <div> *@
+        @*     Modo: <span class="badge bg-info text-dark">Multi-Tenant (6 Grifos)</span> | SQL Server x64 (Strangler Fig) *@
+        @* </div> *@
+    </footer>
+</div>
+
+<!-- Notificación de error de Blazor -->
+<div id="blazor-error-ui">
+    Ha ocurrido un error inesperado en la conexión interactiva.
+    <a href="" class="reload fw-bold ms-2">Recargar</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private const string ClaveGrifo = "sisges-grifo";
+
+    private IReadOnlyList<EstacionConfig> estaciones = new List<EstacionConfig>();
+    private string grifoActivo = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            estaciones = ConnectionFactory.ObtenerEstaciones();
+            if (estaciones.Any())
+            {
+                grifoActivo = string.IsNullOrEmpty(GrifoContext.GrifoActivoId) 
+                    ? estaciones.First().Id 
+                    : GrifoContext.GrifoActivoId;
+                
+                GrifoContext.EstablecerGrifoActivo(grifoActivo);
+            }
+        }
+        catch (Exception)
+        {
+            // Respaldo preventivo
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // Restaurar el último grifo elegido en este navegador (sobrevive a F5 / nuevas pestañas)
+        try
+        {
+            var guardado = await LocalStorage.GetAsync<string>(ClaveGrifo);
+            if (guardado.Success
+                && !string.IsNullOrEmpty(guardado.Value)
+                && guardado.Value != grifoActivo
+                && estaciones.Any(e => e.Id == guardado.Value))
+            {
+                grifoActivo = guardado.Value;
+                GrifoContext.EstablecerGrifoActivo(grifoActivo);
+                StateHasChanged();
+            }
+        }
+        catch (Exception)
+        {
+            // Almacenamiento no disponible o valor inválido: se queda el grifo por defecto
+        }
+    }
+
+    private async Task OnGrifoCambiado()
+    {
+        // Sin recargar la página: recargar crea un circuito nuevo con un GrifoContext vacío
+        // y se volvía siempre al primer grifo. El evento GrifoCambiado avisa a las pantallas abiertas.
+        try
+        {
+            GrifoContext.EstablecerGrifoActivo(grifoActivo);
+            await LocalStorage.SetAsync(ClaveGrifo, grifoActivo);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            grifoActivo = GrifoContext.GrifoActivoId;
+        }
+    }
+}

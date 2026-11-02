@@ -1,0 +1,531 @@
+@page "/ventas/admin-documentos"
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IAdminDocumentosRepository AdminDocumentosRepository
+@inject IGrifoContext GrifoContext
+@rendermode InteractiveServer
+@implements IDisposable
+@inject  IFormaPagoRepository FormaPagoRepository
+
+<PageTitle>Administración de Documentos Venta Isla - SISGES</PageTitle>
+
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-receipt text-primary me-2"></i>Documentos Venta Isla
+        </h4>
+    </div>
+    @if (turno == 0 && documentos is not null)
+    {
+        <span class="badge fs-6 bg-primary"><i class="bi bi-calendar-check-fill me-1"></i>Venta completa (Todos los turnos)</span>
+    }
+    else if (!string.IsNullOrEmpty(estadoTurno))
+    {
+        <span class="badge fs-6 @(estadoTurno == "CER" ? "bg-secondary" : "bg-success")">
+            <i class="bi @(estadoTurno == "CER" ? "bi-lock-fill" : "bi-unlock-fill") me-1"></i>
+            Turno @(estadoTurno == "CER" ? "cerrado" : "abierto")
+        </span>
+    }
+</div>
+@if(!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success d-flex align-items-center" role="alert">
+        <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+        <div>@mensajeExito</div>
+    </div>
+}
+
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger d-flex align-items-start" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+        <div class="text-break">@mensajeError</div>
+    </div>
+}
+
+<div class="row g-3 mb-3">
+    @* ═══════════════ CONSULTA POR TURNO ═══════════════ *@
+    <div class="col-12 col-xxl-8">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-funnel text-primary me-2"></i>Consulta por turno</h6>
+            </div>
+            <div class="card-body">
+                <form class="row g-3 align-items-end" @onsubmit="BuscarPorTurnoAsync" @onsubmit:preventDefault>
+                    <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+                        <label for="fecha" class="form-label small fw-semibold">Fecha</label>
+                        <input id="fecha" type="date" class="form-control" @bind="fecha" />
+                        <div class="btn-group btn-group-sm mt-2" role="group" aria-label="Tipo de fecha">
+                            <input type="radio" class="btn-check" id="tf-turno" name="tipo-fecha" checked="@(tipoFecha == TipoFechaReporte.Turno)"
+                                   @onchange="() => tipoFecha = TipoFechaReporte.Turno" />
+                            <label class="btn btn-outline-primary" for="tf-turno">F. Turno</label>
+                            <input type="radio" class="btn-check" id="tf-emision" name="tipo-fecha" checked="@(tipoFecha == TipoFechaReporte.Emision)"
+                                   @onchange="() => tipoFecha = TipoFechaReporte.Emision" />
+                            <label class="btn btn-outline-primary" for="tf-emision">F. Emisión</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-xl-2">
+                        <label for="turno" class="form-label small fw-semibold">Turno</label>
+                        <select id="turno" class="form-select" @bind="turno">
+                            <option value="0">Todos (Venta completa)</option>
+                            @foreach (var t in turnos)
+                            {
+                                <option value="@t.Codigo">@t.Codigo - @t.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-4 col-xl-2">
+                        <label for="terminal" class="form-label small fw-semibold">Terminal</label>
+                        <select id="terminal" class="form-select" @bind="terminal">
+                            <option value="0">Todos</option>
+                            @foreach (var t in terminales)
+                            {
+                                <option value="@t.Codigo">@t.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-8 col-xl-3">
+                        <label for="trabajador" class="form-label small fw-semibold">Trabajador</label>
+                        <select id="trabajador" class="form-select" @bind="trabajador">
+                            <option value="0">Todos</option>
+                            @foreach (var t in trabajadores)
+                            {
+                                <option value="@t.Codigo">@t.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-4 col-xl-2">
+                        <label for="emision" class="form-label small fw-semibold">Tipo de emisión</label>
+                        <select id="emision" class="form-select" @bind="formaEmision">
+                            <option value="">Todos</option>
+                            @foreach (var f in formasEmision)
+                            {
+                                <option value="@f.Codigo">@f.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-4 col-xl-auto ms-auto">
+                        <button type="submit" class="btn btn-primary w-100" disabled="@buscando">
+                            <i class="bi bi-search me-1"></i>Consultar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    @* ═══════════════ BÚSQUEDA DE UN DOCUMENTO ═══════════════ *@
+    <div class="col-12 col-xxl-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-upc-scan text-primary me-2"></i>Buscar documento</h6>
+            </div>
+            <div class="card-body">
+                <form class="row g-3 align-items-end" @onsubmit="BuscarPorDocumentoAsync" @onsubmit:preventDefault>
+                    <div class="col-12 col-sm-5 col-xxl-12">
+                        <label for="tdoc" class="form-label small fw-semibold">Tipo de documento</label>
+                        <select id="tdoc" class="form-select" @bind="tipoDocumento">
+                            <option value="0">Todos</option>
+                            @foreach (var t in tiposDocumento)
+                            {
+                                <option value="@t.Codigo">@t.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-5 col-sm-3 col-xxl-4">
+                        <label for="serie" class="form-label small fw-semibold">Serie</label>
+                        <input id="serie" class="form-control font-monospace text-uppercase" maxlength="4" autocomplete="off"
+                               placeholder="B014" @bind="serie" />
+                    </div>
+                    <div class="col-7 col-sm-4 col-xxl-5">
+                        <label for="numero" class="form-label small fw-semibold">Número</label>
+                        <input id="numero" class="form-control font-monospace" maxlength="8" inputmode="numeric" autocomplete="off"
+                               data-solo="digitos" @bind="numero" />
+                    </div>
+                    <div class="col-12 col-xxl-3">
+                        <button type="submit" class="btn btn-outline-primary w-100" disabled="@buscando">
+                            <i class="bi bi-search"></i><span class="d-xxl-none ms-1">Buscar</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (buscando)
+{
+    <div class="text-center text-body-secondary py-5">
+        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Consultando documentos...
+    </div>
+}
+else if (documentos is not null)
+{
+    @* ═══════════════ RESUMEN POR TIPO DE DOCUMENTO ═══════════════ *@
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-calculator text-primary me-2"></i>Resumen</h6>
+                    <small class="text-body-secondary">@tituloConsulta</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-head-themed">
+                            <tr>
+                                <th>Documento</th>
+                                <th class="text-end">V. Venta</th>
+                                <th class="text-end">IGV</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Activos</th>
+                                <th class="text-end">Anulados</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in resumen)
+                            {
+                                <tr class="@(r.TipoDocumento == "TOTAL" ? "fila-total" : null)">
+                                    <td>@r.TipoDocumento</td>
+                                    <td class="text-end font-monospace">@r.ValorVenta.ToString("N2")</td>
+                                    <td class="text-end font-monospace">@r.Igv.ToString("N2")</td>
+                                    <td class="text-end font-monospace fw-semibold">@r.Total.ToString("N2")</td>
+                                    <td class="text-end">@r.Activos</td>
+                                    <td class="text-end">@r.Anulados</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @* ═══════════════ LIQUIDACIONES DEL TURNO ═══════════════ *@
+        <div class="col-12 col-xl-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-clipboard-check text-primary me-2"></i>Liquidaciones del turno</h6>
+                </div>
+                @if (liquidaciones.Count == 0)
+                {
+                    <div class="card-body text-body-secondary small">No hay liquidaciones registradas para este turno.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="table-head-themed">
+                                <tr><th>Liquidación</th><th>Trabajador</th><th>Estado</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var l in liquidaciones)
+                                {
+                                    <tr>
+                                        <td class="font-monospace">@l.NU_LIQI</td>
+                                        <td>@l.NombTrab</td>
+                                        <td><span class="badge bg-body-tertiary text-body-secondary">@l.ESTADO</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* ═══════════════ DOCUMENTOS ═══════════════ *@
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header py-3 border-bottom d-flex flex-wrap gap-2 justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold text-body-emphasis">
+                <i class="bi bi-list-ul text-primary me-2"></i>Documentos
+                <span class="badge bg-body-tertiary text-body-secondary ms-1">@DocumentosFiltrados.Count() / @documentos.Count</span>
+            </h6>
+            <input class="form-control form-control-sm w-auto" placeholder="Filtrar: número, cliente, grifero..."
+                   @bind="filtroTexto" @bind:event="oninput" />
+        </div>
+        @if (documentos.Count == 0)
+        {
+            <div class="card-body text-body-secondary">No se encontraron documentos con esos filtros.</div>
+        }
+        else
+        {
+            <div class="table-responsive reporte-scroll">
+                <table class="table table-sm table-hover align-middle mb-0 text-nowrap">
+                    <thead class="table-head-themed">
+                        <tr>
+                            <th class="text-center">Term.</th>
+                            <th class="text-center">Lado</th>
+                            <th>Documento</th>
+                            <th>Número</th>
+                            <th>Hora</th>
+                            <th>Cliente</th>
+                            <th>Producto</th>
+                            <th class="text-end">V. Venta</th>
+                            <th class="text-end">IGV</th>
+                            <th class="text-end">Total</th>
+                            <th>Grifero</th>
+                            <th class="text-center">Emisión</th>
+                            <th>Estado</th>
+                            <th></th> 
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var d in DocumentosFiltrados)
+                        {
+                            <tr class="@(d.EstaAnulado ? "fila-anulada" : null)">
+                                <td class="text-center">@d.CO_PVEN</td>
+                                <td class="text-center">@d.NU_LADO</td>
+                                <td>@d.DE_NOMB</td>
+                                <td class="font-monospace">@d.NRODOC</td>
+                                <td class="font-monospace small">@d.FE_EMIS_HORA</td>
+                                <td class="text-wrap" style="min-width: 12rem">
+                                    @if (!string.IsNullOrWhiteSpace(d.NU_RUC))
+                                    {
+                                        <span class="font-monospace small text-body-secondary me-1">@d.NU_RUC</span>
+                                    }
+                                    @d.NU_RSOC
+                                </td>
+                                <td>@d.DE_PROD_CORT</td>
+                                <td class="text-end font-monospace">@d.IM_VNET.ToString("N2")</td>
+                                <td class="text-end font-monospace">@d.IM_IGV.ToString("N2")</td>
+                                <td class="text-end font-monospace fw-semibold">@d.IM_TOTA.ToString("N2")</td>
+                                <td class="small">@d.GRIFERO</td>
+                                <td class="text-center small">@(d.EMISION == "M" ? "Manual" : "Auto")</td>
+                                <td>
+                                    @if (d.EstaAnulado)
+                                    {
+                                        <span class="badge bg-danger">ANULADO</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    @if (AdmiteFormaPago(d))
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-primary" title="Forma de pago"
+                                                @onclick="() => AbrirFormaPago(d)">
+                                            <i class="bi bi-credit-card"></i>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+@if (documentoFormaPago is not null)
+{
+    <FormaPagoModal Documento="documentoFormaPago" Tarjetas="tarjetas" OnCerrar="CerrarFormaPago" />
+}
+
+@code {
+    private IReadOnlyList<OpcionCatalogo> turnos = Array.Empty<OpcionCatalogo>();
+    private IReadOnlyList<OpcionCatalogo> terminales = Array.Empty<OpcionCatalogo>();
+    private IReadOnlyList<OpcionCatalogo> trabajadores = Array.Empty<OpcionCatalogo>();
+    private IReadOnlyList<OpcionCatalogo> tiposDocumento = Array.Empty<OpcionCatalogo>();
+    private IReadOnlyList<OpcionCatalogo> formasEmision = Array.Empty<OpcionCatalogo>();
+
+    // Filtros
+    private DateTime fecha = DateTime.Today;
+    private TipoFechaReporte tipoFecha = TipoFechaReporte.Turno;
+    private int turno = 1;
+    private int terminal;
+    private int trabajador;
+    private string formaEmision = string.Empty;
+    private int tipoDocumento;
+    private string serie = string.Empty;
+    private string numero = string.Empty;
+    
+
+    // Resultados
+    private IReadOnlyList<DocumentoVentaIsla>? documentos;
+    private IReadOnlyList<ResumenVentaIsla> resumen = Array.Empty<ResumenVentaIsla>();
+    private IReadOnlyList<LiquidacionTurno> liquidaciones = Array.Empty<LiquidacionTurno>();
+    private string estadoTurno = string.Empty;
+    private string tituloConsulta = string.Empty;
+    private string filtroTexto = string.Empty;
+
+    private bool buscando;
+    private string? mensajeError;
+    private string? mensajeExito;
+    private IReadOnlyList<TarjetaCredito> tarjetas = Array.Empty<TarjetaCredito>();
+    private HashSet<int> tiposConFormaPago = new();
+    private DocumentoVentaIsla? documentoFormaPago;
+    private int consultaActual;    // descarta respuestas de una consulta anterior o de otro grifo
+
+    protected override async Task OnInitializedAsync()
+    {
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await CargarCatalogosAsync();
+    }
+
+    private async Task CargarCatalogosAsync()
+    {
+        try
+        {
+            turnos = await AdminDocumentosRepository.GetTurnosAsync();
+            terminales = await AdminDocumentosRepository.GetTerminalesAsync();
+            trabajadores = await AdminDocumentosRepository.GetTrabajadoresAsync();
+            tiposDocumento = await AdminDocumentosRepository.GetTiposDocumentosAsync();
+            formasEmision = await AdminDocumentosRepository.GetFormasEmisionAsync();
+            tarjetas = await FormaPagoRepository.GetTarjetasAsync();
+            tiposConFormaPago = (await FormaPagoRepository.GetTiposDocumentoConPagoAsync()).ToHashSet();
+
+            // Igual que MostarTurnos del original: arranca en el turno en curso
+            var actual = await AdminDocumentosRepository.GetTurnoActualAsync();
+            if (actual is not null)
+            {
+                fecha = actual.Fecha.Date;
+                turno = actual.Turno;
+            }
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudieron cargar los catálogos: {ex.Message}";
+        }
+    }
+
+    private Task BuscarPorTurnoAsync() =>
+        ConsultarAsync(new FiltroDocumentosIsla(fecha, tipoFecha, turno, terminal, trabajador, formaEmision));
+
+    private Task BuscarPorDocumentoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(serie) || !int.TryParse(numero, out var nro) || nro <= 0)
+        {
+            mensajeError = "Ingresa la serie y el número del documento.";
+            return Task.CompletedTask;
+        }
+        return ConsultarAsync(new FiltroDocumentosIsla(fecha, tipoFecha, turno, TipoDocumento: tipoDocumento, Serie: serie, Numero: nro));
+    }
+
+    private async Task ConsultarAsync(FiltroDocumentosIsla filtro)
+    {
+        var consulta = ++consultaActual;
+        buscando = true;
+        mensajeError = null;
+        filtroTexto = string.Empty;
+
+        try
+        {
+            var encontrados = await AdminDocumentosRepository.BuscarDocumentosAsync(filtro);
+
+            // La búsqueda por documento no tiene turno: no se muestran estado ni liquidaciones
+            var estado = string.Empty;
+            IReadOnlyList<LiquidacionTurno> liquis = Array.Empty<LiquidacionTurno>();
+            if (!filtro.EsBusquedaPorDocumento)
+            {
+                estado = await AdminDocumentosRepository.GetEstadoTurnoAsync(filtro.Fecha, filtro.Turno);
+                liquis = await AdminDocumentosRepository.GetLiquidacionesAsync(filtro.Fecha, filtro.Turno);
+            }
+
+            if (consulta != consultaActual) return;
+            documentos = encontrados;
+            resumen = CalcularResumen(encontrados);
+            estadoTurno = estado;
+            liquidaciones = liquis;
+            tituloConsulta = TituloConsulta(filtro);
+        }
+        catch (Exception ex)
+        {
+            if (consulta == consultaActual) mensajeError = $"No se pudo consultar: {ex.Message}";
+        }
+        finally
+        {
+            if (consulta == consultaActual) buscando = false;
+        }
+    }
+
+    // Equivale a QSP_TCDOCU_COMB_05 / _21 / _037 del original, pero sobre la misma lista que se muestra
+    // (así también respeta el filtro de tipo de emisión, que esos SP no tienen).
+    // SP_TCDOCU_COMB_Q18 pone en 0 el total de los anulados, pero NO su valor venta ni su IGV: se excluyen aquí.
+    private static IReadOnlyList<ResumenVentaIsla> CalcularResumen(IReadOnlyList<DocumentoVentaIsla> docs)
+    {
+        var filas = docs
+            .GroupBy(d => new { d.CO_TDOC, d.DE_NOMB })
+            .OrderBy(g => g.Key.CO_TDOC)
+            .Select(g => new ResumenVentaIsla(g.Key.DE_NOMB,
+                g.Where(d => !d.EstaAnulado).Sum(d => d.IM_VNET),
+                g.Where(d => !d.EstaAnulado).Sum(d => d.IM_IGV),
+                g.Where(d => !d.EstaAnulado).Sum(d => d.IM_TOTA),
+                g.Count(d => !d.EstaAnulado), g.Count(d => d.EstaAnulado)))
+            .ToList();
+
+        if (filas.Count > 0)
+        {
+            filas.Add(new ResumenVentaIsla("TOTAL",
+                filas.Sum(f => f.ValorVenta), filas.Sum(f => f.Igv), filas.Sum(f => f.Total),
+                filas.Sum(f => f.Activos), filas.Sum(f => f.Anulados)));
+        }
+        return filas;
+    }
+
+    private IEnumerable<DocumentoVentaIsla> DocumentosFiltrados
+    {
+        get
+        {
+            if (documentos is null) return Enumerable.Empty<DocumentoVentaIsla>();
+            var texto = filtroTexto.Trim();
+            if (texto.Length == 0) return documentos;
+            return documentos.Where(d =>
+                d.NRODOC.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                d.NU_RUC.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                d.NU_RSOC.Contains(texto, StringComparison.OrdinalIgnoreCase) ||
+                (d.GRIFERO ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private string TituloConsulta(FiltroDocumentosIsla f)
+    {
+        if (f.EsBusquedaPorDocumento) return "Documento " + f.Serie.ToUpperInvariant() + "-" + f.Numero;
+        var tipo = f.TipoFecha == TipoFechaReporte.Turno ? "Fecha turno" : "Fecha emisión";
+        var turnoTexto = f.Turno > 0 ? " · Turno " + f.Turno : " · Todos los turnos (Venta completa)";
+        var texto = tipo + " " + f.Fecha.ToString("dd/MM/yyyy") + turnoTexto;
+        if (f.Terminal > 0) texto += " · " + Descripcion(terminales, f.Terminal.ToString());
+        if (f.Trabajador > 0) texto += " · " + Descripcion(trabajadores, f.Trabajador.ToString());
+        if (!string.IsNullOrEmpty(f.FormaEmision)) texto += " · " + Descripcion(formasEmision, f.FormaEmision);
+        return texto;
+    }
+
+    private static string Descripcion(IEnumerable<OpcionCatalogo> opciones, string codigo) =>
+        opciones.FirstOrDefault(o => o.Codigo == codigo)?.Descripcion ?? codigo;
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            // Turnos, terminales y trabajadores son de cada base de datos
+            consultaActual++;
+            documentos = null;
+            resumen = Array.Empty<ResumenVentaIsla>();
+            liquidaciones = Array.Empty<LiquidacionTurno>();
+            estadoTurno = string.Empty;
+            buscando = false;
+            mensajeError = null;
+            terminal = 0;
+            trabajador = 0;
+            await CargarCatalogosAsync();
+            StateHasChanged();
+        });
+    }
+
+    private bool AdmiteFormaPago(DocumentoVentaIsla d) => !d.EstaAnulado && tiposConFormaPago.Contains(d.CO_TDOC);
+
+    private void AbrirFormaPago(DocumentoVentaIsla d)
+    {
+        mensajeExito = null;
+        documentoFormaPago = d;
+    }
+
+    private void CerrarFormaPago(bool guardado)
+    {
+        if(guardado) mensajeExito = "Forma de pago del documento " + documentoFormaPago?.NRODOC + " actualizada.";
+        documentoFormaPago = null;
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+    }
+}

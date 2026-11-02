@@ -1,0 +1,154 @@
+@implements IDisposable
+@inject NavigationManager Navigation
+
+<ul class="sidebar-nav list-unstyled mb-0">
+
+    <!-- DASHBOARD / INICIO -->
+    <li class="nav-item">
+        <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+            <i class="bi bi-speedometer2 text-info"></i>
+            <span class="nav-text">Dashboard Principal</span>
+        </NavLink>
+    </li>
+
+    <!-- ═══════════════ GRUPOS PLEGABLES ═══════════════ -->
+    @foreach (var grupo in grupos)
+    {
+        var abierto = gruposAbiertos.Contains(grupo.Titulo);
+        var contieneActivo = grupo.Items.Any(i => EsRutaActiva(i.Href));
+
+        <li class="menu-group @(abierto ? "open" : "") @(contieneActivo ? "has-active" : "")">
+            <button type="button" class="menu-group-toggle" aria-expanded="@(abierto ? "true" : "false")"
+                    @onclick="() => AlternarGrupo(grupo.Titulo)">
+                <i class="bi @grupo.Icono"></i>
+                <span class="nav-text">@grupo.Titulo</span>
+                <i class="bi bi-chevron-down menu-group-chevron"></i>
+            </button>
+
+            <div class="menu-group-collapse">
+                <ul class="menu-group-items list-unstyled mb-0" inert="@(!abierto)">
+                    @foreach (var item in grupo.Items)
+                    {
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="@item.Href">
+                                <i class="bi @item.Icono @item.ColorIcono"></i>
+                                <span class="nav-text">@item.Texto</span>
+                                @if (item.Badge is not null)
+                                {
+                                    <span class="badge @item.BadgeColor">@item.Badge</span>
+                                }
+                            </NavLink>
+                        </li>
+                    }
+                </ul>
+            </div>
+        </li>
+    }
+</ul>
+
+@code {
+    private record MenuItem(string Texto, string Href, string Icono, string ColorIcono = "text-secondary",
+                            string? Badge = null, string BadgeColor = "bg-danger");
+
+    private record MenuGrupo(string Titulo, string Icono, MenuItem[] Items);
+
+    // Menú completo (75+ pantallas): agregar aquí las nuevas opciones
+    private static readonly MenuGrupo[] grupos =
+    {
+        new("Mantenimientos", "bi-tools", new MenuItem[]
+        {
+            new("Clientes Eventuales", "mantenimientos/clientes-eventuales", "bi-person-badge"),
+            new("Clientes", "mantenimientos/clientes", "bi-people-fill"),
+            new("Cambio Precios Surtidor", "mantenimientos/precios", "bi-currency-dollar", "text-warning", "PLAYA"),
+            new("Movimientos Inventario", "mantenimientos/movimientos", "bi-arrow-left-right"),
+            new("Tanques", "mantenimientos/tanques", "bi-inboxes-fill", "text-info"),
+            new("Contómetros", "mantenimientos/contometros", "bi-speedometer"),
+        }),
+        new("Control de Ventas", "bi-cart-check", new MenuItem[]
+        {
+            new("Admin Docs Venta Isla", "ventas/admin-documentos", "bi-receipt"),
+            new("Reporte Depósitos / Tarjetas", "ventas/depositos-tarjetas", "bi-credit-card-2-back", "text-info"),
+            new("Entrega de Efectivo", "ventas/entrega-efectivo", "bi-cash-stack", "text-success"),
+            new("Gastos Varios", "ventas/gastos-varios", "bi-journal-minus"),
+            new("Asignar Trabajador", "ventas/asignar-trabajador", "bi-person-check-fill"),
+            new("Reimpresión de Vouchers", "ventas/reimpresion", "bi-printer-fill"),
+        }),
+        new("Facturación y Créditos", "bi-receipt-cutoff", new MenuItem[]
+        {
+            new("Facturación Combustible", "facturacion/combustible", "bi-file-earmark-text-fill", "text-primary"),
+            new("Canje Ticket a Factura", "facturacion/canje-ticket", "bi-arrow-repeat", "text-info"),
+            new("Cuenta Corriente Clientes", "cobranzas/cuenta-corriente", "bi-credit-card-2-front-fill"),
+        }),
+        new("Procesos y Cierres", "bi-hourglass-split", new MenuItem[]
+        {
+            new("Cierre de Turno", "procesos/cierre-turno", "bi-clock-history", "text-warning"),
+            new("Cierre de Liquidación", "procesos/cierre-liquidacion", "bi-calculator-fill"),
+            new("Cierre de Día", "procesos/cierre-dia", "bi-calendar-check"),
+            new("Generar Kardex", "procesos/genera-kardex", "bi-gear-wide-connected"),
+        }),
+        new("Tablas del Sistema", "bi-table", new MenuItem[]
+        {
+            new("Empresas / Sucursal", "tablas/empresa", "bi-building"),
+            new("Artículos / Productos", "tablas/productos", "bi-box-seam"),
+            new("Trabajadores / Griferos", "tablas/trabajador", "bi-person-lines-fill"),
+            new("Configuración Playa", "tablas/config-playa", "bi-sliders"),
+            new("Tipos de Documento", "tablas/tipo-documento", "bi-file-earmark-ruled"),
+        }),
+        new("Reportes Fiscales", "bi-bank2", new MenuItem[]
+        {
+            new("Resumen por Fechas y Tipo Documento", "reportes/fiscales/resumen-tipo-documento", "bi-file-earmark-bar-graph", "text-info"),
+        }),
+        new("Reportes Gerenciales", "bi-graph-up-arrow", new MenuItem[]
+        {
+            new("PLE SUNAT", "reportes/fiscal-ple-sunat", "bi-bank", "text-danger"),
+            new("Ventas por Isla", "reportes/ventas-isla", "bi-fuel-pump-fill"),
+            new("Ventas Galones y Soles", "reportes/ventas-galones-soles", "bi-bar-chart-line-fill"),
+            new("Cuadre Conciliación", "reportes/conciliacion", "bi-check2-circle", "text-success"),
+            new("Contómetros vs Comprobantes", "reportes/contometros-vs-comprobantes", "bi-shield-check"),
+        }),
+    };
+
+    // Todos los grupos empiezan contraídos; solo se abre el que contiene la pantalla actual
+    private readonly HashSet<string> gruposAbiertos = new();
+
+    protected override void OnInitialized()
+    {
+        AbrirGrupoActivo();
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void AlternarGrupo(string titulo)
+    {
+        if (!gruposAbiertos.Remove(titulo))
+        {
+            gruposAbiertos.Add(titulo);
+        }
+    }
+
+    private void AbrirGrupoActivo()
+    {
+        var grupo = grupos.FirstOrDefault(g => g.Items.Any(i => EsRutaActiva(i.Href)));
+        if (grupo is not null)
+        {
+            gruposAbiertos.Add(grupo.Titulo);
+        }
+    }
+
+    private bool EsRutaActiva(string href)
+    {
+        var ruta = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+        return ruta.Equals(href, StringComparison.OrdinalIgnoreCase)
+               || ruta.StartsWith(href + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        AbrirGrupoActivo();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

@@ -1,0 +1,396 @@
+@page "/"
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject ISqlConnectionFactory ConnectionFactory
+@inject IGrifoContext GrifoContext
+@inject IEmpresaRepository EmpresaRepository
+@inject IDashboardRepository DashboardRepository
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Dashboard - SISGES CoreUI</PageTitle>
+
+<!-- ═══════════════ WIDGETS KPI SUPERIORES (ESTILO COREUI) ═══════════════ -->
+<div class="row g-3 mb-4">
+    
+    <!-- Widget 1: Primario Morado/Azul (Ventas del Día) -->
+    <div class="col-12 col-sm-6 col-xxl-3">
+        <div class="card text-white bg-widget-primary widget-stat-card shadow-sm h-100">
+            <div class="card-body pb-0 d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fs-4 fw-bold">
+                        S/ @VentaTotal.ToString("N2")
+                        @if (resumen?.VariacionPorcentaje is decimal variacion)
+                        {
+                            <span class="fs-7 fw-normal text-white-50" title="Frente a ayer hasta la misma hora">(@TextoVariacion(variacion))</span>
+                        }
+                    </div>
+                    <div class="text-white-50 small text-uppercase fw-semibold mt-1">Ventas del Día @FechaTurnoTexto</div>
+                </div>
+                <div class="p-2 bg-white bg-opacity-25 rounded-3">
+                    <i class="bi bi-currency-dollar fs-4"></i>
+                </div>
+            </div>
+            <div class="px-3 pt-3 pb-2 text-white-50 small d-flex justify-content-between align-items-center">
+                <span>Comprobantes: <strong>@(resumen?.DOCUMENTOS_DIA.ToString("N0") ?? "-")</strong></span>
+                <span class="badge bg-white text-primary fw-bold" title="@TituloMarket">Pista + Market</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget 2: Celeste Info (Galones Despachados) -->
+    <div class="col-12 col-sm-6 col-xxl-3">
+        <div class="card text-white bg-widget-info widget-stat-card shadow-sm h-100">
+            <div class="card-body pb-0 d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fs-4 fw-bold">@GalonesTotal.ToString("N1") <span class="fs-7 fw-normal text-white-50">GAL</span></div>
+                    <div class="text-white-50 small text-uppercase fw-semibold mt-1">Combustible Despachado</div>
+                </div>
+                <div class="p-2 bg-white bg-opacity-25 rounded-3">
+                    <i class="bi bi-fuel-pump fs-4"></i>
+                </div>
+            </div>
+            <div class="px-3 pt-3 pb-2 text-white-50 small d-flex justify-content-between align-items-center">
+                <span class="text-truncate me-2" title="@DetalleProductos">@DetalleProductosCorto</span>
+                <span class="badge bg-white text-info fw-bold">@GrifoContext.GrifoActivoId</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget 3: Amarillo/Warning (Turno Actual) -->
+    <div class="col-12 col-sm-6 col-xxl-3">
+        <div class="card text-white bg-widget-warning widget-stat-card shadow-sm h-100">
+            <div class="card-body pb-0 d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fs-4 fw-bold">TURNO @(resumen?.CO_TURN?.ToString() ?? "-") <span class="fs-7 fw-normal text-white-50">@NombreTurno</span></div>
+                    <div class="text-white-50 small text-uppercase fw-semibold mt-1">Estado de Turno</div>
+                </div>
+                <div class="p-2 bg-white bg-opacity-25 rounded-3">
+                    <i class="bi bi-clock-history fs-4"></i>
+                </div>
+            </div>
+            <div class="px-3 pt-3 pb-2 text-white-50 small d-flex justify-content-between align-items-center">
+                <span>Inicio: @InicioTurnoTexto · S/ @(resumen?.VENTA_TURNO.ToString("N2") ?? "0.00")</span>
+                <span class="badge bg-light text-dark fw-bold">@(resumen?.CO_TURN is null ? "Sin turno" : "● Abierto")</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget 4: Rojo/Coral Danger (Red de Estaciones) -->
+    <div class="col-12 col-sm-6 col-xxl-3">
+        <div class="card text-white bg-widget-danger widget-stat-card shadow-sm h-100">
+            <div class="card-body pb-0 d-flex justify-content-between align-items-start">
+                <div>
+                    <div class="fs-4 fw-bold">@EstacionesTexto <span class="fs-7 fw-normal text-white-50">ONLINE</span></div>
+                    <div class="text-white-50 small text-uppercase fw-semibold mt-1">Estaciones Conectadas</div>
+                </div>
+                <div class="p-2 bg-white bg-opacity-25 rounded-3">
+                    <i class="bi bi-hdd-network fs-4"></i>
+                </div>
+            </div>
+            <div class="px-3 pt-3 pb-2 text-white-50 small d-flex justify-content-between align-items-center">
+                <span>Latencia: <strong>@(LatenciaGrifoActivo?.ToString() ?? "-") ms</strong></span>
+                <span class="badge bg-white text-danger fw-bold text-truncate" title="@EstacionesFueraDeLinea">@EtiquetaEstaciones</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ TARJETA PRINCIPAL: DATOS DE ESTACIÓN EN TIEMPO REAL ═══════════════ -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header py-3 d-flex flex-wrap align-items-center justify-content-between gap-2 border-bottom">
+        <div class="min-w-0">
+            <h5 class="card-title mb-0 fw-bold text-body-emphasis">
+                <i class="bi bi-building text-primary me-2"></i>Información de la Estación (<span class="text-primary">@GrifoContext.GrifoActivoId</span>)
+            </h5>
+            @* <small class="text-body-secondary text-break">Consulta en tiempo real vía Stored Procedures <code>dbo.QSP_TMEMPR_03</code> y <code>dbo.QSP_TMEMPR_02</code></small> *@
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-primary btn-sm px-3" @onclick="CargarDatosAsync" disabled="@cargando">
+                <i class="bi bi-arrow-clockwise me-1"></i>@(cargando ? "Consultando..." : "Refrescar")
+            </button>
+            <a href="tablas/empresa" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-pencil-square me-1"></i>Gestionar Empresa
+            </a>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        @if (!string.IsNullOrEmpty(mensajeError))
+        {
+            <div class="alert alert-danger m-3 d-flex align-items-center" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-danger"></i>
+                <div>
+                    <h6 class="alert-heading fw-bold mb-1">Aviso de Conexión:</h6>
+                    <p class="mb-0 small">@mensajeError</p>
+                </div>
+            </div>
+        }
+
+        @if (cargando)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-body-secondary small">Cargando datos desde SQL Server (@GrifoContext.GrifoActivoId)...</p>
+            </div>
+        }
+        else if (empresas != null && empresas.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-head-themed">
+                        <tr>
+                            <th class="ps-4 d-none d-md-table-cell">Código</th>
+                            <th class="ps-3 ps-md-2">Razón Social</th>
+                            <th class="d-none d-sm-table-cell">Nombre Comercial</th>
+                            <th>RUC</th>
+                            <th class="d-none d-lg-table-cell">Dirección Fiscal</th>
+                            <th class="d-none d-xl-table-cell">Teléfono</th>
+                            <th class="d-none d-xxl-table-cell">Ubigeo / Ciudad</th>
+                            <th class="text-end pe-4">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var emp in empresas)
+                        {
+                            <tr>
+                                <td class="ps-4 fw-bold text-body-secondary d-none d-md-table-cell">#@emp.CO_EMPR</td>
+                                <td class="ps-3 ps-md-2">
+                                    <div class="fw-bold text-body-emphasis">@emp.NO_EMPR</div>
+                                    <small class="text-body-secondary">Sucursal Principal</small>
+                                </td>
+                                <td class="d-none d-sm-table-cell">
+                                    <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1">
+                                        @(string.IsNullOrEmpty(emp.DE_NOMB_CORT) ? emp.NO_EMPR : emp.DE_NOMB_CORT)
+                                    </span>
+                                </td>
+                                <td class="font-monospace fw-bold text-body-emphasis text-nowrap">@(string.IsNullOrEmpty(emp.NU_RUCS) ? "-" : emp.NU_RUCS)</td>
+                                <td class="text-truncate d-none d-lg-table-cell" style="max-width: 250px;" title="@emp.DE_DIRE">
+                                    @(string.IsNullOrEmpty(emp.DE_DIRE) ? "No especificada" : emp.DE_DIRE)
+                                </td>
+                                <td class="text-nowrap d-none d-xl-table-cell">@(string.IsNullOrEmpty(emp.NU_TEL1) ? "-" : emp.NU_TEL1)</td>
+                                <td class="d-none d-xxl-table-cell">
+                                    <small class="text-body-secondary">
+                                        @(string.IsNullOrEmpty(emp.DEP) ? "-" : $"{emp.DEP} / {emp.PROV} / {emp.DIST}")
+                                    </small>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 text-nowrap">
+                                        ● Operativo
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5 text-body-secondary">
+                <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
+                <p>No se encontraron registros de empresa para la estación actual.</p>
+            </div>
+        }
+    </div>
+
+    <div class="card-footer py-2 px-3 px-md-4 d-flex flex-wrap gap-2 justify-content-between align-items-center small text-body-secondary">
+        <div>
+            <i class="bi bi-speedometer me-1"></i> Tiempo de respuesta SQL: <strong class="text-body-emphasis">@tiempoRespuestaMs ms</strong>
+        </div>
+        @* <div> *@
+        @*     Motor: <span class="badge bg-secondary">SQL Server 2019 x64</span> | Protocolo: <span class="badge bg-info text-dark">TCP/IP Port 1433</span> *@
+        @* </div> *@
+    </div>
+</div>
+
+<!-- ═══════════════ ACCESOS DIRECTOS OPERATIVOS ═══════════════ -->
+<div class="row g-3">
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="d-flex align-items-center min-w-0">
+                <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-3 me-3 flex-shrink-0">
+                    <i class="bi bi-currency-dollar fs-3"></i>
+                </div>
+                <div>
+                    <h6 class="fw-bold mb-1">Precios de Combustible</h6>
+                    <small class="text-body-secondary d-block mb-2">Actualizar precios por manguera y surtidor en playa</small>
+                    <a href="mantenimientos/precios" class="btn btn-outline-primary btn-sm">Ir a Precios →</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="d-flex align-items-center min-w-0">
+                <div class="p-3 bg-warning bg-opacity-10 text-warning rounded-3 me-3 flex-shrink-0">
+                    <i class="bi bi-clock-history fs-3"></i>
+                </div>
+                <div>
+                    <h6 class="fw-bold mb-1">Cierre de Turnos</h6>
+                    <small class="text-body-secondary d-block mb-2">Cuadre de contado y liquidación de griferos</small>
+                    <a href="procesos/cierre-turno" class="btn btn-outline-warning btn-sm">Ver Turnos →</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-4">
+        <div class="card border-0 shadow-sm p-3 h-100">
+            <div class="d-flex align-items-center min-w-0">
+                <div class="p-3 bg-info bg-opacity-10 text-info rounded-3 me-3 flex-shrink-0">
+                    <i class="bi bi-inboxes-fill fs-3"></i>
+                </div>
+                <div>
+                    <h6 class="fw-bold mb-1">Control de Tanques</h6>
+                    <small class="text-body-secondary d-block mb-2">Varillaje físico vs saldo computarizado</small>
+                    <a href="mantenimientos/tanques" class="btn btn-outline-info btn-sm">Ver Tanques →</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Los indicadores se vuelven a consultar solos cada minuto
+    private static readonly TimeSpan IntervaloRefresco = TimeSpan.FromMinutes(1);
+
+    private IEnumerable<Empresa>? empresas;
+    private ResumenDashboard? resumen;
+    private IReadOnlyList<EstadoEstacion>? estaciones;
+    private bool cargando = false;
+    private string? mensajeError;
+    private long tiempoRespuestaMs = 0;
+    private int consultaActual = 0;
+    private readonly CancellationTokenSource cts = new();
+    private PeriodicTimer? timer;
+
+    private decimal VentaTotal => (resumen?.VENTA_DIA ?? 0) + (resumen?.VENTA_MARKET ?? 0);
+    private string FechaTurnoTexto => resumen?.FE_TURN is DateTime f ? "(" + f.ToString("dd/MM") + ")" : string.Empty;
+    private string NombreTurno => string.IsNullOrWhiteSpace(resumen?.NO_TURN) ? string.Empty : "(" + resumen!.NO_TURN!.Trim() + ")";
+    private string InicioTurnoTexto => resumen?.INICIO_TURNO is DateTime i ? i.ToString("dd/MM HH:mm") + " hrs" : "-";
+    private string TituloMarket => "Market: S/ " + (resumen?.VENTA_MARKET ?? 0).ToString("N2");
+
+    private static string TextoVariacion(decimal variacion) =>
+        (variacion >= 0 ? "+" : "") + variacion.ToString("N1") + "% " + (variacion >= 0 ? "↑" : "↓");
+
+    // GNV se despacha en m³: no se suma a los galones, va aparte en el detalle
+    private decimal GalonesTotal => resumen?.Productos.Where(p => !p.EsGnv).Sum(p => p.Volumen) ?? 0;
+    private string DetalleProductos => TextoProductos(int.MaxValue);
+    private string DetalleProductosCorto => TextoProductos(3);
+
+    private string TextoProductos(int maximo) => resumen is null || resumen.Productos.Count == 0
+        ? "Sin despachos"
+        : string.Join(" | ", resumen.Productos.Take(maximo).Select(p => p.Producto + ": " + p.Volumen.ToString("N0") + (p.EsGnv ? " m³" : "")));
+
+    private string EstacionesTexto => estaciones is null ? "-" : estaciones.Count(e => e.EnLinea) + " / " + estaciones.Count;
+    private long? LatenciaGrifoActivo => estaciones?.FirstOrDefault(e => e.Id == GrifoContext.GrifoActivoId && e.EnLinea)?.LatenciaMs;
+    private string EstacionesFueraDeLinea => estaciones is null
+        ? string.Empty
+        : string.Join(", ", estaciones.Where(e => !e.EnLinea).Select(e => string.IsNullOrWhiteSpace(e.Nombre) ? e.Id : e.Nombre));
+    private string EtiquetaEstaciones => string.IsNullOrEmpty(EstacionesFueraDeLinea) ? "Multi-DB" : "Sin conexión: " + EstacionesFueraDeLinea;
+
+    protected override async Task OnInitializedAsync()
+    {
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await CargarDatosAsync();
+        _ = RefrescarPeriodicamenteAsync();
+    }
+
+    private async Task RefrescarPeriodicamenteAsync()
+    {
+        timer = new PeriodicTimer(IntervaloRefresco);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cts.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await CargarIndicadoresAsync(consultaActual, mostrarError: false);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // La página se cerró
+        }
+    }
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await CargarDatosAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task CargarDatosAsync()
+    {
+        // Si el usuario cambia de grifo mientras una consulta sigue en curso,
+        // solo se muestra el resultado de la última.
+        var consulta = ++consultaActual;
+
+        cargando = true;
+        mensajeError = null;
+        resumen = null;
+        StateHasChanged();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        IEnumerable<Empresa>? resultado = null;
+        string? error = null;
+        try
+        {
+            resultado = await EmpresaRepository.GetEmpresaAsync();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+
+        if (consulta != consultaActual) return;
+
+        sw.Stop();
+        empresas = resultado;
+        mensajeError = error;
+        tiempoRespuestaMs = sw.ElapsedMilliseconds;
+        cargando = false;
+
+        await CargarIndicadoresAsync(consulta, mostrarError: true);
+    }
+
+    private async Task CargarIndicadoresAsync(int consulta, bool mostrarError)
+    {
+        // Las estaciones se prueban en paralelo con la consulta de ventas
+        var tareaEstaciones = DashboardRepository.GetEstadoEstacionesAsync(cts.Token);
+        try
+        {
+            var nuevoResumen = await DashboardRepository.GetResumenAsync(cts.Token);
+            if (consulta == consultaActual) resumen = nuevoResumen;
+        }
+        catch (Exception ex) when (!cts.IsCancellationRequested)
+        {
+            if (consulta == consultaActual && mostrarError) mensajeError = $"No se pudieron cargar los indicadores: {ex.Message}";
+        }
+
+        try
+        {
+            var nuevasEstaciones = await tareaEstaciones;
+            if (consulta == consultaActual) estaciones = nuevasEstaciones;
+        }
+        catch (Exception) when (!cts.IsCancellationRequested)
+        {
+            // Se mantiene el último estado conocido
+        }
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+        cts.Cancel();
+        timer?.Dispose();
+        cts.Dispose();
+    }
+}

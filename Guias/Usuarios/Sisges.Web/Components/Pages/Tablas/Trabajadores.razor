@@ -1,0 +1,153 @@
+@page "/tablas/trabajador"
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject ITrabajadorRepository TrabajadorRepository
+@inject IGrifoContext GrifoContext
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Trabajadores y Usuarios - SISGES</PageTitle>
+
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-person-lines-fill text-primary me-2"></i>Trabajadores y Usuarios
+        </h4>
+        <small class="text-body-secondary">Tablas · reemplaza a <code>frmMstTrabajador</code> · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <a href="tablas/trabajador/nuevo" class="btn btn-primary">
+        <i class="bi bi-person-plus me-1"></i>Nuevo trabajador
+    </a>
+</div>
+
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form class="row g-2 align-items-end" @onsubmit="BuscarAsync" @onsubmit:preventDefault>
+            <div class="col-12 col-md">
+                <label for="buscar" class="form-label small fw-semibold">Buscar por apellidos, nombres, usuario o DNI</label>
+                <input id="buscar" class="form-control text-uppercase" maxlength="50" autocomplete="off" @bind="texto" />
+            </div>
+            <div class="col-12 col-md-auto">
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch" id="inactivos" @bind="incluirInactivos" />
+                    <label class="form-check-label small" for="inactivos">Incluir inactivos</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-auto">
+                <button type="submit" class="btn btn-outline-primary w-100" disabled="@buscando">
+                    <i class="bi bi-search me-1"></i>Buscar
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger" role="alert">@mensajeError</div>
+}
+
+@if (buscando)
+{
+    <div class="text-center text-body-secondary py-5">
+        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Buscando...
+    </div>
+}
+else if (resultados is not null)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-header py-3 border-bottom d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold text-body-emphasis">Trabajadores</h6>
+            <span class="badge bg-body-tertiary text-body-secondary">@resultados.Count</span>
+        </div>
+        @if (resultados.Count == 0)
+        {
+            <div class="card-body text-body-secondary">No se encontraron trabajadores.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-head-themed">
+                        <tr>
+                            <th class="text-end">Código</th>
+                            <th>Apellidos y nombres</th>
+                            <th>Usuario</th>
+                            <th class="d-none d-md-table-cell">Tipo</th>
+                            <th class="d-none d-lg-table-cell">Perfil</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in resultados)
+                        {
+                            var activo = t.ESTADO == "ACTIVO";
+                            <tr class="@(activo ? null : "text-body-secondary")">
+                                <td class="text-end font-monospace">@t.CO_TRAB</td>
+                                <td>@t.APE_NOM</td>
+                                <td class="font-monospace">@t.CO_USUA</td>
+                                <td class="d-none d-md-table-cell small">@(t.TIPO_TRAB == Trabajador.TipoEmpleado ? "Empleado" : "Grifero")</td>
+                                <td class="d-none d-lg-table-cell small">@t.NO_PERF</td>
+                                <td><span class="badge @(activo ? "bg-success" : "bg-secondary")">@t.ESTADO</span></td>
+                                <td class="text-end">
+                                    <a href="@RutaEditar(t.CO_TRAB)" class="btn btn-sm btn-outline-primary text-nowrap">
+                                        <i class="bi bi-pencil me-1"></i>Editar
+                                    </a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string texto = string.Empty;
+    private bool incluirInactivos;
+    private IReadOnlyList<TrabajadorResumen>? resultados;
+    private bool buscando;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await BuscarAsync();    // al entrar muestra los activos
+    }
+
+    private async Task BuscarAsync()
+    {
+        buscando = true;
+        mensajeError = null;
+        try
+        {
+            resultados = await TrabajadorRepository.BuscarAsync(texto, incluirInactivos);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo buscar: {ex.Message}";
+        }
+        finally
+        {
+            buscando = false;
+        }
+    }
+
+    private static string RutaEditar(int codigo) => "tablas/trabajador/" + codigo;
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await BuscarAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+    }
+}

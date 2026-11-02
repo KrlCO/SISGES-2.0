@@ -1,0 +1,322 @@
+@page "/mantenimientos/clientes"
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IClienteRepository ClienteRepository
+@inject IGrifoContext GrifoContext
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Clientes - SISGES</PageTitle>
+
+<!-- CABECERA -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-people-fill text-primary me-2"></i>Mantenimiento de Clientes
+        </h4>
+        <small class="text-body-secondary">Listado general y control de estado · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <a href="mantenimientos/clientes/nuevo" class="btn btn-primary">
+        <i class="bi bi-person-plus me-1"></i>Nuevo cliente
+    </a>
+</div>
+
+<!-- BARRA DE BÚSQUEDA Y FILTROS -->
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body">
+        <form class="row g-2 align-items-end" @onsubmit="BuscarAsync" @onsubmit:preventDefault>
+            <div class="col-12 col-md-5">
+                <label for="buscar" class="form-label small fw-semibold text-body-secondary">Buscar por RUC o Razón Social</label>
+                <div class="input-group input-group-sm">
+                    <input id="buscar" class="form-control text-uppercase" maxlength="50" autocomplete="off"
+                           placeholder="Filtrar por RUC o nombre..." @bind="texto" />
+                    @if (!string.IsNullOrEmpty(texto))
+                    {
+                        <button class="btn btn-outline-secondary" type="button" @onclick="LimpiarFiltroAsync">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="col-6 col-md-4">
+                <label class="form-label small fw-semibold text-body-secondary">Estado</label>
+                <div class="btn-group btn-group-sm w-100" role="group">
+                    <input type="radio" class="btn-check" name="filtroEstado" id="est-todos" autocomplete="off"
+                           checked="@(filtroEstado == "TODOS")" @onchange='() => CambiarFiltroEstado("TODOS")' />
+                    <label class="btn btn-outline-secondary" for="est-todos">Todos</label>
+
+                    <input type="radio" class="btn-check" name="filtroEstado" id="est-activos" autocomplete="off"
+                           checked="@(filtroEstado == "ACTIVOS")" @onchange='() => CambiarFiltroEstado("ACTIVOS")' />
+                    <label class="btn btn-outline-success" for="est-activos">Activos</label>
+
+                    <input type="radio" class="btn-check" name="filtroEstado" id="est-inactivos" autocomplete="off"
+                           checked="@(filtroEstado == "INACTIVOS")" @onchange='() => CambiarFiltroEstado("INACTIVOS")' />
+                    <label class="btn btn-outline-secondary" for="est-inactivos">Inactivos</label>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3">
+                <button type="submit" class="btn btn-outline-primary btn-sm w-100" disabled="@buscando">
+                    @if (buscando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        <span>Cargando...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-search me-1"></i>
+                        <span>Buscar / Recargar</span>
+                    }
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MENSAJES -->
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger py-2 mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>@mensajeError
+    </div>
+}
+@if (!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success py-2 mb-3" role="alert">
+        <i class="bi bi-check-circle-fill me-2"></i>@mensajeExito
+    </div>
+}
+
+<!-- TABLA DE CLIENTES (LISTAR) -->
+<div class="card shadow-sm border-0">
+    <div class="card-header py-3 bg-transparent border-bottom d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold text-body-emphasis">
+            Listado de Clientes
+            <span class="badge bg-body-tertiary text-body-secondary ms-1">@ClientesVisibles.Count</span>
+        </h6>
+        @if (todosLosClientes is not null)
+        {
+            <small class="text-body-secondary">Total registrados: @todosLosClientes.Count</small>
+        }
+    </div>
+
+    @if (buscando && todosLosClientes is null)
+    {
+        <div class="text-center text-body-secondary py-5">
+            <div class="spinner-border text-primary mb-2" role="status"></div>
+            <div>Cargando listado de clientes...</div>
+        </div>
+    }
+    else if (ClientesVisibles.Count == 0)
+    {
+        <div class="card-body text-center text-body-secondary py-5">
+            <i class="bi bi-inbox display-6 d-block mb-2"></i>
+            No se encontraron clientes para el filtro seleccionado.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="font-size: 0.9rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-end" style="width: 80px;">Código</th>
+                        <th style="width: 130px;">RUC / Doc</th>
+                        <th>Razón Social / Nombre</th>
+                        <th class="d-none d-lg-table-cell">Dirección</th>
+                        <th class="text-center" style="width: 110px;">Estado</th>
+                        <th class="text-end" style="width: 170px;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in ClientesVisibles)
+                    {
+                        var esActivo = c.ESTADO == "ACTIVO";
+                        <tr class="@(esActivo ? "" : "text-body-secondary opacity-75")">
+                            <td class="text-end font-monospace">@c.CO_CLIE</td>
+                            <td class="font-monospace text-nowrap">@(string.IsNullOrEmpty(c.NU_RUC) ? "-" : c.NU_RUC)</td>
+                            <td class="fw-semibold">@c.NU_RSOC</td>
+                            <td class="d-none d-lg-table-cell small text-body-secondary">@c.DE_DOMI</td>
+                            <td class="text-center">
+                                @if (esActivo)
+                                {
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle">Activo</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <a href="@($"mantenimientos/clientes/{c.CO_CLIE}")" class="btn btn-sm btn-outline-primary me-1" title="Editar cliente">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+
+                                @if (esActivo)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Inactivar cliente"
+                                            @onclick="() => ConfirmarInactivar(c)">
+                                        <i class="bi bi-person-x"></i> Inactivar
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-success" title="Reactivar cliente"
+                                            @onclick="() => ReactivarClienteAsync(c)">
+                                        <i class="bi bi-arrow-counterclockwise"></i> Reactivar
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<!-- MODAL DE CONFIRMACIÓN DE INACTIVACIÓN -->
+@if (clienteAInactivar is not null)
+{
+    <div class="modal d-block" tabindex="-1" role="dialog" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow border-0">
+                <div class="modal-header border-bottom-0">
+                    <h5 class="modal-title fw-bold text-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Inactivar Cliente
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => clienteAInactivar = null"></button>
+                </div>
+                <div class="modal-body py-0">
+                    <p class="mb-2">¿Estás seguro de que deseas dejar en estado <strong>Inactivo</strong> al siguiente cliente?</p>
+                    <div class="p-3 bg-body-tertiary rounded">
+                        <div class="fw-bold">@clienteAInactivar.NU_RSOC</div>
+                        <div class="small text-body-secondary">
+                            Código: <code>@clienteAInactivar.CO_CLIE</code> · RUC/Doc: <code>@clienteAInactivar.NU_RUC</code>
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        El cliente no será eliminado de la base de datos, pero no se le podrá emitir vales ni facturación a crédito hasta ser reactivado.
+                    </small>
+                </div>
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => clienteAInactivar = null">Cancelar</button>
+                    <button type="button" class="btn btn-danger btn-sm" @onclick="EjecutarInactivacionAsync">
+                        <i class="bi bi-person-x me-1"></i>Confirmar Inactivación
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string texto = string.Empty;
+    private string filtroEstado = "TODOS"; // "TODOS", "ACTIVOS", "INACTIVOS"
+    private IReadOnlyList<ClienteResumen>? todosLosClientes;
+    private ClienteResumen? clienteAInactivar;
+    private bool buscando = true;
+    private string? mensajeError;
+    private string? mensajeExito;
+
+    private IReadOnlyList<ClienteResumen> ClientesVisibles
+    {
+        get
+        {
+            if (todosLosClientes is null) return Array.Empty<ClienteResumen>();
+            return filtroEstado switch
+            {
+                "ACTIVOS" => todosLosClientes.Where(c => c.ESTADO == "ACTIVO").ToList(),
+                "INACTIVOS" => todosLosClientes.Where(c => c.ESTADO != "ACTIVO").ToList(),
+                _ => todosLosClientes
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await CargarListadoAsync();
+    }
+
+    private async Task CargarListadoAsync()
+    {
+        buscando = true;
+        mensajeError = null;
+        try
+        {
+            todosLosClientes = await ClienteRepository.BuscarAsync(texto);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "No se pudo cargar el listado de clientes: " + ex.Message;
+        }
+        finally
+        {
+            buscando = false;
+        }
+    }
+
+    private async Task BuscarAsync() => await CargarListadoAsync();
+
+    private async Task LimpiarFiltroAsync()
+    {
+        texto = string.Empty;
+        await CargarListadoAsync();
+    }
+
+    private void CambiarFiltroEstado(string nuevoEstado) => filtroEstado = nuevoEstado;
+
+    private void ConfirmarInactivar(ClienteResumen cliente)
+    {
+        mensajeExito = null;
+        clienteAInactivar = cliente;
+    }
+
+    private async Task EjecutarInactivacionAsync()
+    {
+        if (clienteAInactivar is null) return;
+        try
+        {
+            await ClienteRepository.InactivarAsync(clienteAInactivar.CO_CLIE, "WEBADMIN");
+            mensajeExito = $"Cliente {clienteAInactivar.CO_CLIE} inactivado correctamente.";
+            clienteAInactivar = null;
+            await CargarListadoAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "Error al inactivar cliente: " + ex.Message;
+        }
+    }
+
+    private async Task ReactivarClienteAsync(ClienteResumen cliente)
+    {
+        mensajeExito = null;
+        try
+        {
+            await ClienteRepository.ReactivarAsync(cliente.CO_CLIE, "WEBADMIN");
+            mensajeExito = $"Cliente {cliente.CO_CLIE} reactivado a estado Activo.";
+            await CargarListadoAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "Error al reactivar cliente: " + ex.Message;
+        }
+    }
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            todosLosClientes = null;
+            await CargarListadoAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+    }
+}

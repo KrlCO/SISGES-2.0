@@ -1,0 +1,584 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SISGES - CoreUI 5 Theme & Layout Customizations
+   ═══════════════════════════════════════════════════════════════════
+   Layout:
+   - >= 992px (lg): sidebar fijo a la izquierda; el wrapper deja su espacio.
+                    body.sidebar-collapsed lo oculta y el contenido usa todo el ancho.
+   - <  992px     : sidebar oculto; body.sidebar-open lo muestra como panel
+                    superpuesto con fondo oscuro.
+   El estado se guarda en <body> (fuera del árbol de Blazor), ver App.razor.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+    --sisges-sidebar-width: 16rem; /* 256px */
+    --sisges-transition: 0.25s ease-in-out;
+    --sisges-primary: #5856d6;
+    --sisges-info: #39f;
+    --sisges-warning: #f9b115;
+    --sisges-danger: #e55353;
+    --sisges-success: #1b9e3e;
+}
+
+html, body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+}
+
+body {
+    overflow-x: hidden;
+}
+
+/* Utilidades que no trae CoreUI / Bootstrap */
+.fs-7 {
+    font-size: 0.8rem !important;
+}
+
+.min-w-0 {
+    min-width: 0 !important;
+}
+
+/* ─────────────── SIDEBAR FIJO ─────────────── */
+.sidebar.sidebar-fixed {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--sisges-sidebar-width);
+    /* CoreUI oculta .sidebar con margin-left negativo por debajo de 992px:
+       lo anulamos porque aquí se controla con transform. */
+    margin-left: 0 !important;
+    z-index: 1040;
+    background-color: #212631 !important;
+    color: #ffffff;
+    display: flex;
+    flex-direction: column;
+    transition: transform var(--sisges-transition);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+.sidebar .sidebar-brand {
+    flex: 0 0 auto;
+    height: 64px;
+    background-color: #1a1e27;
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem 0 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.75rem 0.5rem 1.5rem;
+}
+
+/* Scrollbar estilizada en la barra lateral */
+.sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.sidebar-nav::-webkit-scrollbar {
+    width: 5px;
+}
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.sidebar-nav .nav-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8a93a2;
+    padding: 1rem 0.75rem 0.35rem 0.75rem;
+    margin: 0;
+}
+
+.sidebar-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.75rem;
+    color: rgba(255, 255, 255, 0.75);
+    background: transparent;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+    margin-bottom: 2px;
+}
+
+.sidebar-nav .nav-link:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-nav .nav-link.active {
+    color: #ffffff;
+    background-color: var(--sisges-primary);
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(88, 86, 214, 0.4);
+}
+
+.sidebar-nav .nav-link i {
+    flex: 0 0 20px;
+    font-size: 1.1rem;
+    margin-right: 0.25rem;
+    text-align: center;
+    opacity: 0.85;
+}
+
+.sidebar-nav .nav-link.active i {
+    color: #ffffff !important;
+    opacity: 1;
+}
+
+/* Textos largos: hacen salto de línea en vez de desbordar el sidebar */
+.sidebar-nav .nav-link .nav-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.25;
+    white-space: normal; /* CoreUI pone nowrap en .sidebar-nav .nav-link */
+    overflow-wrap: anywhere;
+}
+
+.sidebar-nav .nav-link .badge {
+    flex: 0 0 auto;
+    font-size: 0.62rem;
+}
+
+/* ─────────────── GRUPOS PLEGABLES DEL MENÚ ─────────────── */
+.sidebar-nav .menu-group {
+    margin-top: 2px;
+}
+
+.sidebar-nav .menu-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+}
+
+.sidebar-nav .menu-group-toggle:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-nav .menu-group-toggle:focus-visible {
+    outline: 2px solid var(--sisges-primary);
+    outline-offset: -2px;
+}
+
+.sidebar-nav .menu-group-toggle > i:first-child {
+    flex: 0 0 20px;
+    font-size: 1.1rem;
+    margin-right: 0.25rem;
+    text-align: center;
+    color: #8a93a2;
+}
+
+.sidebar-nav .menu-group-toggle .nav-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.sidebar-nav .menu-group-chevron {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    color: #8a93a2;
+    transition: transform var(--sisges-transition);
+}
+
+.sidebar-nav .menu-group.open > .menu-group-toggle .menu-group-chevron {
+    transform: rotate(180deg);
+}
+
+/* Grupo que contiene la pantalla actual: se resalta aunque esté contraído */
+.sidebar-nav .menu-group.has-active > .menu-group-toggle,
+.sidebar-nav .menu-group.has-active > .menu-group-toggle > i:first-child {
+    color: #ffffff;
+}
+
+/* Animación de despliegue (0fr → 1fr anima a la altura real del contenido) */
+.sidebar-nav .menu-group-collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--sisges-transition);
+}
+
+.sidebar-nav .menu-group.open > .menu-group-collapse {
+    grid-template-rows: 1fr;
+}
+
+.sidebar-nav .menu-group-items {
+    min-height: 0;
+    overflow: hidden;
+    padding-left: 0.75rem;
+}
+
+.sidebar-nav .menu-group.open > .menu-group-collapse > .menu-group-items {
+    padding-top: 2px;
+    padding-bottom: 4px;
+}
+
+.sidebar-nav .menu-group-items .nav-link {
+    font-size: 0.85rem;
+}
+
+/* Fondo oscuro detrás del sidebar en móvil */
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1035;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--sisges-transition), visibility var(--sisges-transition);
+}
+
+/* ─────────────── WRAPPER PRINCIPAL ─────────────── */
+.wrapper {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-width: 0;
+    width: 100%;
+    padding-left: var(--sisges-sidebar-width);
+    transition: padding-left var(--sisges-transition);
+}
+
+.wrapper > .body {
+    min-width: 0;
+}
+
+/* Escritorio (>= 992px): sidebar fijo, plegable con el botón hamburguesa */
+@media (min-width: 992px) {
+    body.sidebar-collapsed .sidebar.sidebar-fixed {
+        transform: translateX(-100%);
+        box-shadow: none;
+    }
+
+    body.sidebar-collapsed .wrapper {
+        padding-left: 0;
+    }
+}
+
+/* Tablet / Móvil (< 992px): sidebar como panel superpuesto */
+@media (max-width: 991.98px) {
+    .wrapper {
+        padding-left: 0;
+    }
+
+    .sidebar.sidebar-fixed {
+        transform: translateX(-100%);
+        box-shadow: none;
+        max-width: 85vw;
+    }
+
+    body.sidebar-open .sidebar.sidebar-fixed {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    }
+
+    body.sidebar-open .sidebar-overlay {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    body.sidebar-open {
+        overflow: hidden;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar.sidebar-fixed,
+    .sidebar-overlay,
+    .wrapper {
+        transition: none;
+    }
+}
+
+/* ─────────────── HEADER SUPERIOR (CoreUI) ─────────────── */
+.header-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+}
+
+.header-grifo-select {
+    width: 100%;
+    max-width: 280px;
+    min-width: 0;
+    text-overflow: ellipsis;
+}
+
+[data-coreui-theme=light] .wrapper {
+    background-color: #f3f4f7;
+}
+
+[data-coreui-theme=light] .header {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dbdfe6;
+}
+
+[data-coreui-theme=dark] .wrapper {
+    background-color: #1a1e27;
+}
+
+[data-coreui-theme=dark] .header {
+    background-color: #212631;
+    border-bottom: 1px solid #323a49;
+}
+
+/* ─────────────── TARJETAS DE KPI SUPERIORES (WIDGETS) ─────────────── */
+.widget-stat-card {
+    border-radius: 0.5rem;
+    border: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    overflow: hidden;
+}
+
+.widget-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12) !important;
+}
+
+.bg-widget-primary {
+    background: linear-gradient(135deg, #5856d6 0%, #4644b4 100%) !important;
+}
+
+.bg-widget-info {
+    background: linear-gradient(135deg, #39f 0%, #2980b9 100%) !important;
+}
+
+.bg-widget-warning {
+    background: linear-gradient(135deg, #f9b115 0%, #d89606 100%) !important;
+}
+
+.bg-widget-danger {
+    background: linear-gradient(135deg, #e55353 0%, #c93b3b 100%) !important;
+}
+
+/* ─────────────── TABLAS ─────────────── */
+/* Cabecera de tabla que respeta el modo claro/oscuro (table-light no lo hace) */
+.table > thead.table-head-themed > tr > th {
+    background-color: var(--cui-tertiary-bg);
+    color: var(--cui-secondary-color);
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+/* ─────────────── REPORTES ─────────────── */
+.reporte-tabla {
+    font-size: 0.8rem;
+}
+
+.reporte-tabla td,
+.reporte-tabla th {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+
+.reporte-tabla .reporte-col-nombre {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reporte-tabla tr.fila-grupo > td {
+    background-color: var(--cui-secondary-bg);
+    color: var(--cui-emphasis-color);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.reporte-tabla tr.fila-subtotal > td {
+    background-color: var(--cui-tertiary-bg);
+    font-weight: 700;
+    border-top: 1px solid var(--cui-border-color);
+}
+
+.reporte-tabla tr.fila-total > td {
+    background-color: rgba(88, 86, 214, 0.12);
+    color: var(--cui-emphasis-color);
+    font-weight: 800;
+    border-top: 2px solid var(--sisges-primary);
+}
+
+.reporte-tabla tr.fila-anulada > td {
+    color: var(--cui-secondary-color);
+    text-decoration: line-through;
+    text-decoration-color: rgba(229, 83, 83, 0.6);
+}
+
+.reporte-tabla tr.fila-anulada > td .badge {
+    text-decoration: none;
+}
+
+/* Detalle largo: scroll propio con cabecera fija */
+.reporte-scroll {
+    max-height: 70vh;
+}
+
+.reporte-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.reporte-buscador {
+    width: 280px;
+    max-width: 100%;
+}
+
+.reporte-cabecera-impresion {
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+/* ─────────────── IMPRESIÓN ─────────────── */
+@page {
+    size: A4 landscape;
+    margin: 10mm;
+
+    @bottom-right {
+        content: "Página " counter(page) " de " counter(pages);
+        font-size: 9pt;
+    }
+}
+
+@media print {
+    .sidebar,
+    .sidebar-overlay,
+    .header,
+    .footer,
+    #blazor-error-ui {
+        display: none !important;
+    }
+
+    html, body, .wrapper {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+
+    .wrapper {
+        padding-left: 0 !important;
+        min-height: 0;
+    }
+
+    .wrapper > .body {
+        padding: 0 !important;
+    }
+
+    .card {
+        box-shadow: none !important;
+        border: 0 !important;
+        background: transparent !important;
+    }
+
+    .card-header {
+        background: transparent !important;
+        padding: 0.25rem 0 !important;
+    }
+
+    .reporte-bloque {
+        break-inside: auto;
+    }
+
+    .reporte-scroll {
+        max-height: none !important;
+        overflow: visible !important;
+    }
+
+    .reporte-scroll thead th {
+        position: static;
+    }
+
+    .reporte-tabla {
+        font-size: 8pt;
+        color: #000000;
+    }
+
+    .reporte-tabla thead {
+        display: table-header-group; /* repite la cabecera en cada página */
+    }
+
+    .reporte-tabla tr {
+        break-inside: avoid;
+    }
+
+    .reporte-tabla .reporte-col-nombre {
+        max-width: none;
+        white-space: normal;
+    }
+
+    .reporte-tabla > :not(caption) > * > * {
+        background-color: transparent !important;
+        color: #000000 !important;
+        box-shadow: none !important;
+    }
+
+    .reporte-tabla tr.fila-subtotal > td,
+    .reporte-tabla tr.fila-total > td {
+        border-top: 1px solid #000000;
+    }
+}
+
+/* ─────────────── ERROR UI DE BLAZOR ─────────────── */
+#blazor-error-ui {
+    background: #fff3cd;
+    color: #664d03;
+    bottom: 0;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    display: none;
+    left: 0;
+    padding: 0.75rem 3rem 0.75rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1060;
+    border-top: 1px solid #ffecb5;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 1.25rem;
+    top: 0.75rem;
+}
+
+/* ── Campos con restricción de caracteres (data-solo): aviso al bloquear una tecla ── */
+@keyframes entrada-bloqueada {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+}
+
+.entrada-bloqueada {
+    animation: entrada-bloqueada 0.2s ease-in-out;
+    border-color: var(--cui-danger) !important;
+}

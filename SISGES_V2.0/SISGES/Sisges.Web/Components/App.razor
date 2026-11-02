@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <base href="/"/>
+    <title>SISGES - Gestión de Estaciones de Servicio</title>
+
+    <!-- Aplicar el tema guardado ANTES de pintar (evita parpadeo claro → oscuro) -->
+    <script>
+        (function () {
+            var saved = 'light';
+            try { saved = localStorage.getItem('sisges-theme') || 'light'; } catch (e) { }
+            document.documentElement.setAttribute('data-coreui-theme', saved);
+        })();
+    </script>
+
+    <!-- CoreUI 5 (Bootstrap 5) y Fuentes de Iconos -->
+    <link rel="stylesheet" href="coreui.min.css"/>
+    <link rel="stylesheet" href="bootstrap-icons.min.css"/>
+    <!-- ?v= fuerza al navegador a descargar app.css cada vez que cambia -->
+    <link rel="stylesheet" href="@($"app.css?v={AppCssVersion}")"/>
+    <link rel="icon" type="image/png" href="favicon.png"/>
+    <HeadOutlet @rendermode="InteractiveServer"/>
+</head>
+
+<body>
+    <!-- El estado del sidebar vive en <body> (fuera del árbol de Blazor) para que
+         los re-render del circuito no lo pierdan. -->
+    <script>
+        (function () {
+            try {
+                if (localStorage.getItem('sisges-sidebar') === 'collapsed') {
+                    document.body.classList.add('sidebar-collapsed');
+                }
+            } catch (e) { }
+        })();
+    </script>
+
+    <Routes @rendermode="InteractiveServer"/>
+
+    <!-- coreui.bundle.min.js NO se carga: su plugin Sidebar se auto-inicializa sobre .sidebar y, como
+         Blazor reemplaza el <aside> al conectar, deja un listener en document que cancela los clics
+         fuera del sidebar (los botones submit dejaban de funcionar). El sidebar y el tema los maneja
+         el script de abajo. Si en el futuro se necesitan modales/dropdowns de CoreUI, cargar el bundle
+         y renombrar la clase .sidebar del layout para que el plugin no la tome. -->
+    <script src="_framework/blazor.web.js"></script>
+    <script>
+        // Breakpoint "lg" de CoreUI/Bootstrap: por debajo el sidebar es un panel superpuesto
+        const SISGES_DESKTOP_MQ = window.matchMedia('(min-width: 992px)');
+
+        // Alternar modo claro / oscuro
+        function toggleCoreUiTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-coreui-theme') || 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-coreui-theme', newTheme);
+            try { localStorage.setItem('sisges-theme', newTheme); } catch (e) { }
+        }
+
+        // Toggle para la barra lateral
+        function toggleSidebar() {
+            const body = document.body;
+            if (SISGES_DESKTOP_MQ.matches) {
+                const collapsed = body.classList.toggle('sidebar-collapsed');
+                try { localStorage.setItem('sisges-sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (e) { }
+            } else {
+                body.classList.toggle('sidebar-open');
+            }
+        }
+
+        function closeSidebar() {
+            document.body.classList.remove('sidebar-open');
+        }
+
+        // En móvil: cerrar el panel al elegir una opción del menú
+        document.addEventListener('click', function (e) {
+            if (!SISGES_DESKTOP_MQ.matches && e.target.closest('#sidebar .nav-link')) {
+                closeSidebar();
+            }
+        });
+
+        // Cerrar con Escape
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeSidebar();
+        });
+
+        // Al pasar a escritorio, limpiar el estado del panel móvil
+        SISGES_DESKTOP_MQ.addEventListener('change', closeSidebar);
+
+        // Restricción de caracteres por campo: <input data-solo="digitos|telefono|decimal|letras|razon|email">.
+        // Cada patrón describe lo que NO se permite. "razon" acepta lo mismo que dbo.FU_NO_RAZO_SOCI_Q01.
+        const SISGES_NO_PERMITIDOS = {
+            digitos:  '[^0-9]',
+            telefono: '[^0-9 +()\\-]',
+            decimal:  '[^0-9.]',
+            letras:   "[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ '.\\-]",
+            razon:    "[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ .'%\\-]",
+            email:    '[^A-Za-z0-9@@._+\\-]'      // la arroba va doble para que Razor no la tome como código
+        };
+
+        function sisgesAvisarBloqueo(input) {
+            input.classList.remove('entrada-bloqueada');
+            void input.offsetWidth;   // reinicia la animación
+            input.classList.add('entrada-bloqueada');
+        }
+
+        // Al teclear: el carácter no permitido ni siquiera llega a escribirse
+        document.addEventListener('beforeinput', function (e) {
+            const patron = SISGES_NO_PERMITIDOS[e.target.dataset && e.target.dataset.solo];
+            if (!patron || !e.data) return;
+            if (new RegExp(patron).test(e.data)) {
+                e.preventDefault();
+                sisgesAvisarBloqueo(e.target);
+            }
+        });
+
+        // Al pegar o autocompletar: se limpian los caracteres no permitidos (Blazor lee el valor en "change")
+        document.addEventListener('input', function (e) {
+            const input = e.target;
+            const patron = SISGES_NO_PERMITIDOS[input.dataset && input.dataset.solo];
+            if (!patron || input.type === 'number') return;
+            const limpio = input.value.replace(new RegExp(patron, 'g'), '');
+            if (limpio !== input.value) {
+                const cursor = Math.max(0, (input.selectionStart || 0) - (input.value.length - limpio.length));
+                input.value = limpio;
+                input.setSelectionRange(cursor, cursor);
+                sisgesAvisarBloqueo(input);
+            }
+        });
+
+        // Descarga de archivos generados en el servidor (exportación CSV de reportes).
+        // El BOM (﻿) hace que Excel lea bien tildes y eñes.
+        function sisgesDescargarArchivo(nombre, tipo, contenido) {
+            const blob = new Blob(['﻿' + contenido], { type: tipo });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombre;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+    </script>
+</body>
+
+</html>
+
+@code {
+    [Inject] private IWebHostEnvironment Env { get; set; } = default!;
+
+    private string AppCssVersion = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        var file = Env.WebRootFileProvider.GetFileInfo("app.css");
+        AppCssVersion = file.Exists ? file.LastModified.ToUnixTimeSeconds().ToString() : "1";
+    }
+}

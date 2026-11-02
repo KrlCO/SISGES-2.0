@@ -1,0 +1,27 @@
+# Solo se versiona SISGES V2.0, scripts SQL y guías
+/SISGES_CodigoFuente_Completo/
+/SISGES_CodigoFuente_Completo.zip
+/SISGES_Doms/
+/Interface_CBX_GLP/
+*.docx
+*.zip
+
+# Credenciales: usar appsettings.example.json como plantilla
+appsettings.json
+appsettings.*.json
+!appsettings.example.json
+
+# .NET / IDE
+[Bb]in/
+[Oo]bj/
+.vs/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# Claude Code local
+.claude/settings.local.json
+
+# Documentación interna
+BITACORA_SISGES_NET8.md

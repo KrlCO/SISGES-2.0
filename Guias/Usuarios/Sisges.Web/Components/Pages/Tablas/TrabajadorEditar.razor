@@ -1,0 +1,410 @@
+@page "/tablas/trabajador/nuevo"
+@page "/tablas/trabajador/{Codigo:int}"
+@using Sisges.Domain.Common
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject ITrabajadorRepository TrabajadorRepository
+@inject IGrifoContext GrifoContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>@(EsEdicion ? "Editar trabajador" : "Nuevo trabajador") - SISGES</PageTitle>
+
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi @(EsEdicion ? "bi-pencil-square" : "bi-person-plus-fill") text-primary me-2"></i>
+            <span>@(EsEdicion ? "Editar trabajador " + Codigo : "Nuevo trabajador")</span>
+        </h4>
+        <small class="text-body-secondary">Tablas · reemplaza a <code>frmMstTrabajador</code> · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <a href="tablas/trabajador" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Volver a la lista
+    </a>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success d-flex align-items-center" role="alert">
+        <i class="bi bi-check-circle-fill fs-5 me-2"></i><div>@mensajeExito</div>
+    </div>
+}
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger d-flex align-items-start" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i><div class="text-break">@mensajeError</div>
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="text-center text-body-secondary py-5">
+        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando...
+    </div>
+}
+else if (EsEdicion && noEncontrado)
+{
+    <div class="alert alert-warning">No se encontró el trabajador @Codigo en este grifo. <a href="tablas/trabajador" class="alert-link">Volver a la lista</a></div>
+}
+else
+{
+<EditForm EditContext="editContext" OnValidSubmit="GuardarAsync">
+    <DataAnnotationsValidator />
+
+    @if (EsEdicion && !trabajador.EstaActivo)
+    {
+        <div class="alert alert-secondary small">
+            <i class="bi bi-person-slash me-1"></i>Este trabajador está <strong>inactivo</strong>.
+            Para reactivarlo marca "Activo" y asígnale una clave nueva.
+        </div>
+    }
+
+    <div class="row g-3 mb-3">
+        @* ═══════════════ DATOS PERSONALES ═══════════════ *@
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-person-vcard text-primary me-2"></i>Datos personales</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-7">
+                            <label for="apel" class="form-label small fw-semibold">Apellidos <span class="text-danger">*</span></label>
+                            <InputText id="apel" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="trabajador.DE_APEL" />
+                            <ValidationMessage For="() => trabajador.DE_APEL" />
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <label for="nomb" class="form-label small fw-semibold">Nombres <span class="text-danger">*</span></label>
+                            <InputText id="nomb" class="form-control text-uppercase" maxlength="30" data-solo="letras" @bind-Value="trabajador.NO_TRAB" />
+                            <ValidationMessage For="() => trabajador.NO_TRAB" />
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label for="dni" class="form-label small fw-semibold">DNI <span class="text-danger">*</span></label>
+                            <InputText id="dni" class="form-control font-monospace" maxlength="8" inputmode="numeric" data-solo="digitos" @bind-Value="trabajador.NU_DNI" />
+                            <ValidationMessage For="() => trabajador.NU_DNI" />
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label for="naci" class="form-label small fw-semibold">Fecha de nacimiento</label>
+                            <InputDate id="naci" class="form-control" @bind-Value="trabajador.FE_NACI" />
+                            <ValidationMessage For="() => trabajador.FE_NACI" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="tipo" class="form-label small fw-semibold">Tipo de trabajador</label>
+                            <InputSelect id="tipo" class="form-select" @bind-Value="trabajador.TIPO_TRAB">
+                                <option value="@Trabajador.TipoGrifero">Grifero</option>
+                                <option value="@Trabajador.TipoEmpleado">Empleado</option>
+                            </InputSelect>
+                        </div>
+                        <div class="col-12 col-md-8">
+                            <label for="dire" class="form-label small fw-semibold">Dirección</label>
+                            <InputText id="dire" class="form-control text-uppercase" maxlength="50" @bind-Value="trabajador.DE_DIRE" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="dist" class="form-label small fw-semibold">Distrito <span class="text-danger">*</span></label>
+                            <InputSelect id="dist" class="form-select" @bind-Value="trabajador.CO_GEOG">
+                                <option value="">Seleccionar...</option>
+                                @foreach (var d in distritos)
+                                {
+                                    <option value="@d.CO_GEOG">@d.NO_GEOG</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => trabajador.CO_GEOG" />
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label for="tel1" class="form-label small fw-semibold">Teléfono</label>
+                            <InputText id="tel1" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="trabajador.NU_TEL1" />
+                            <ValidationMessage For="() => trabajador.NU_TEL1" />
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <label for="tel2" class="form-label small fw-semibold">Celular</label>
+                            <InputText id="tel2" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="trabajador.NU_TEL2" />
+                            <ValidationMessage For="() => trabajador.NU_TEL2" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ═══════════════ ACCESO AL SISTEMA ═══════════════ *@
+        <div class="col-12 col-xl-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-shield-lock text-primary me-2"></i>Acceso al sistema</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label for="usua" class="form-label small fw-semibold">Usuario <span class="text-danger">*</span></label>
+                            <InputText id="usua" class="form-control font-monospace text-uppercase" maxlength="8" autocomplete="off"
+                                       @bind-Value="trabajador.CO_USUA" @bind-Value:after="VerificarUsuarioAsync" />
+                            <ValidationMessage For="() => trabajador.CO_USUA" />
+                        </div>
+                        <div class="col-6">
+                            <label for="perf" class="form-label small fw-semibold">Perfil <span class="text-danger">*</span></label>
+                            <InputSelect id="perf" class="form-select" @bind-Value="trabajador.CO_PERF">
+                                <option value="0">Seleccionar...</option>
+                                @foreach (var p in perfiles)
+                                {
+                                    <option value="@p.Codigo">@p.Descripcion</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => trabajador.CO_PERF" />
+                        </div>
+                        <div class="col-6">
+                            <label for="clave" class="form-label small fw-semibold">
+                                @(EsEdicion ? "Clave nueva" : "Clave") @if (!EsEdicion)
+                                {
+                                    <span class="text-danger">*</span>
+                                }
+                            </label>
+                            <InputText id="clave" type="password" class="form-control font-monospace" maxlength="10" autocomplete="new-password"
+                                       @bind-Value="trabajador.ClaveNueva" />
+                            <ValidationMessage For="() => trabajador.ClaveNueva" />
+                        </div>
+                        <div class="col-6">
+                            <label for="clave2" class="form-label small fw-semibold">Confirmar clave</label>
+                            <InputText id="clave2" type="password" class="form-control font-monospace" maxlength="10" autocomplete="new-password"
+                                       @bind-Value="trabajador.ClaveConfirmacion" />
+                            <ValidationMessage For="() => trabajador.ClaveConfirmacion" />
+                        </div>
+                        <div class="col-12 small text-body-secondary">
+                            5 a 10 letras o números; se guarda en mayúsculas, como en el SISGES actual.
+                            @if (EsEdicion)
+                            {
+                                <span>Déjala vacía para conservar la clave actual.</span>
+                            }
+                        </div>
+
+                        <div class="col-12">
+                            <div class="fw-semibold small mb-1">Estado</div>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Estado">
+                                <input type="radio" class="btn-check" name="estado" id="est-act" checked="@trabajador.EstaActivo"
+                                       @onchange="() => trabajador.ST_TRAB = Trabajador.Activo" />
+                                <label class="btn btn-outline-success" for="est-act">Activo</label>
+                                <input type="radio" class="btn-check" name="estado" id="est-ina" checked="@(!trabajador.EstaActivo)"
+                                       @onchange="() => trabajador.ST_TRAB = Trabajador.Inactivo" disabled="@(!EsEdicion)" />
+                                <label class="btn btn-outline-secondary" for="est-ina">No activo</label>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="fw-semibold small mb-1">Permisos especiales</div>
+                            <div class="form-check"><InputCheckbox id="p-anu" class="form-check-input" @bind-Value="trabajador.PermisoAnular" /><label class="form-check-label small" for="p-anu">Permiso de anulación</label></div>
+                            <div class="form-check"><InputCheckbox id="p-mod" class="form-check-input" @bind-Value="trabajador.PermisoModificar" /><label class="form-check-label small" for="p-mod">Permiso de modificación</label></div>
+                            <div class="form-check"><InputCheckbox id="p-dup" class="form-check-input" @bind-Value="trabajador.PermisoDuplicado" /><label class="form-check-label small" for="p-dup">Permiso duplicado de documentos</label></div>
+                            <div class="form-check"><InputCheckbox id="p-cre" class="form-check-input" @bind-Value="trabajador.PermisoVentaCredito" /><label class="form-check-label small" for="p-cre">Permiso venta a crédito</label></div>
+                            <div class="form-check"><InputCheckbox id="p-adm" class="form-check-input" @bind-Value="trabajador.PermisoAdministrador" /><label class="form-check-label small" for="p-adm">Permiso administrador</label></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 justify-content-between mb-4">
+        <div>
+            @if (EsEdicion && trabajadorGuardadoActivo)
+            {
+                <button type="button" class="btn @(confirmandoBaja ? "btn-danger" : "btn-outline-danger")" @onclick="DesactivarAsync" disabled="@guardando">
+                    <i class="bi bi-person-x me-1"></i>@(confirmandoBaja ? "Sí, desactivar y cambiar la clave" : "Desactivar")
+                </button>
+            }
+        </div>
+        <button type="submit" class="btn btn-primary px-4" disabled="@guardando">
+            @if (guardando)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span><span>Guardando...</span>
+            }
+            else
+            {
+                <i class="bi bi-save me-1"></i><span>@(EsEdicion ? "Guardar cambios" : "Registrar trabajador")</span>
+            }
+        </button>
+    </div>
+</EditForm>
+}
+
+@code {
+    // TODO: reemplazar por el usuario autenticado cuando exista el login (CO_USUA es VARCHAR(8))
+    private const string UsuarioActual = "WEBADMIN";
+
+    [Parameter] public int? Codigo { get; set; }
+    private bool EsEdicion => Codigo is not null;
+
+    private Trabajador trabajador = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore mensajes = default!;
+    private IReadOnlyList<OpcionCatalogo> perfiles = Array.Empty<OpcionCatalogo>();
+    private List<Distrito> distritos = new();
+
+    private bool cargando = true;
+    private bool noEncontrado;
+    private bool guardando;
+    private bool confirmandoBaja;
+    private bool trabajadorGuardadoActivo;    // estado en la base, no el del radio
+    private string? mensajeExito;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        CrearFormulario(new Trabajador());
+        try
+        {
+            perfiles = await TrabajadorRepository.GetPerfilesAsync();
+            distritos = (await TrabajadorRepository.GetDistritosAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudieron cargar los catálogos: {ex.Message}";
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        mensajeError = null;
+        mensajeExito = null;
+        confirmandoBaja = false;
+        noEncontrado = false;
+        cargando = true;
+        try
+        {
+            if (!EsEdicion)
+            {
+                CrearFormulario(new Trabajador());
+                return;
+            }
+
+            var encontrado = await TrabajadorRepository.ObtenerAsync(Codigo!.Value);
+            noEncontrado = encontrado is null;
+            if (encontrado is not null)
+            {
+                // Distrito fuera de Lima Metropolitana (registros antiguos): se agrega para no perderlo
+                if (!string.IsNullOrEmpty(encontrado.CO_GEOG) && distritos.All(d => d.CO_GEOG != encontrado.CO_GEOG))
+                    distritos.Add(new Distrito(encontrado.CO_GEOG, string.Empty, encontrado.CO_GEOG + " (actual)"));
+                CrearFormulario(encontrado);
+            }
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo cargar el trabajador: {ex.Message}";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void CrearFormulario(Trabajador datos)
+    {
+        trabajador = datos;
+        trabajadorGuardadoActivo = datos.EstaActivo;
+        editContext = new EditContext(trabajador);
+        mensajes = new ValidationMessageStore(editContext);
+        editContext.OnFieldChanged += (_, e) => mensajes.Clear(e.FieldIdentifier);
+    }
+
+    // Al salir del campo usuario: avisa si ya lo usa otro trabajador
+    private async Task VerificarUsuarioAsync()
+    {
+        trabajador.CO_USUA = trabajador.CO_USUA.Trim().ToUpperInvariant();
+        if (trabajador.CO_USUA.Length < 5) return;
+        try
+        {
+            var duplicado = await TrabajadorRepository.BuscarUsuarioDuplicadoAsync(trabajador.CO_USUA, trabajador.CO_TRAB);
+            if (duplicado is not null)
+            {
+                mensajes.Add(editContext.Field(nameof(Trabajador.CO_USUA)),
+                    "Ya lo usa " + duplicado.APE_NOM + " (código " + duplicado.CO_TRAB + ", " + duplicado.ESTADO.ToLowerInvariant() + ").");
+                editContext.NotifyValidationStateChanged();
+            }
+        }
+        catch (Exception)
+        {
+            // La validación definitiva se hace al guardar
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        mensajeError = null;
+        mensajeExito = null;
+        confirmandoBaja = false;
+
+        // Reactivar exige clave nueva: la anterior se reemplazó por una aleatoria al desactivar
+        if (EsEdicion && !trabajadorGuardadoActivo && trabajador.EstaActivo && string.IsNullOrWhiteSpace(trabajador.ClaveNueva))
+        {
+            mensajes.Add(editContext.Field(nameof(Trabajador.ClaveNueva)), "Para reactivar al trabajador asígnale una clave nueva.");
+            editContext.NotifyValidationStateChanged();
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            if (EsEdicion)
+            {
+                await TrabajadorRepository.ActualizarAsync(trabajador, UsuarioActual);
+                trabajadorGuardadoActivo = trabajador.EstaActivo;
+                mensajeExito = "Trabajador " + trabajador.CO_TRAB + " actualizado.";
+            }
+            else
+            {
+                var codigo = await TrabajadorRepository.RegistrarAsync(trabajador, UsuarioActual);
+                Navigation.NavigateTo("tablas/trabajador/" + codigo);
+                return;
+            }
+            trabajador.ClaveNueva = null;
+            trabajador.ClaveConfirmacion = null;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo guardar: {ex.Message}";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private async Task DesactivarAsync()
+    {
+        mensajeError = null;
+        mensajeExito = null;
+        if (!confirmandoBaja)
+        {
+            confirmandoBaja = true;
+            return;
+        }
+
+        guardando = true;
+        try
+        {
+            await TrabajadorRepository.DesactivarAsync(trabajador.CO_TRAB, UsuarioActual);
+            var recargado = await TrabajadorRepository.ObtenerAsync(trabajador.CO_TRAB);
+            if (recargado is not null) CrearFormulario(recargado);
+            mensajeExito = "Trabajador desactivado: ya no puede ingresar al sistema y se quitaron sus permisos especiales.";
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo desactivar: {ex.Message}";
+        }
+        finally
+        {
+            guardando = false;
+            confirmandoBaja = false;
+        }
+    }
+
+    private void OnGrifoCambiado()
+    {
+        // El código de trabajador es de la base del grifo anterior
+        _ = InvokeAsync(() => Navigation.NavigateTo("tablas/trabajador"));
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+    }
+}

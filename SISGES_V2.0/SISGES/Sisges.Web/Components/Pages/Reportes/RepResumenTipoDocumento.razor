@@ -1,0 +1,559 @@
+@page "/reportes/fiscales/resumen-tipo-documento"
+@using System.Globalization
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IReporteFiscalRepository ReporteFiscalRepository
+@inject IEmpresaRepository EmpresaRepository
+@inject ISqlConnectionFactory ConnectionFactory
+@inject IGrifoContext GrifoContext
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Resumen por Tipo de Documento - SISGES</PageTitle>
+
+<!-- ═══════════════ CABECERA DE PÁGINA ═══════════════ -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3 d-print-none">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-file-earmark-bar-graph text-primary me-2"></i>Resumen por Fechas y Tipo Documento
+        </h4>
+        <small class="text-body-secondary">Reportes Fiscales · reemplaza a <code>frmRepFisTipDocumento</code></small>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="ImprimirAsync" disabled="@(!HayDatos)">
+            <i class="bi bi-printer me-1"></i>Imprimir
+        </button>
+        <button class="btn btn-outline-success btn-sm" type="button" @onclick="ExportarCsvAsync" disabled="@(!HayDatos)">
+            <i class="bi bi-filetype-csv me-1"></i>Exportar Excel (CSV)
+        </button>
+    </div>
+</div>
+
+<!-- ═══════════════ FILTROS (equivalen al formulario original) ═══════════════ -->
+<div class="card shadow-sm border-0 mb-4 d-print-none">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+
+            <div class="col-12 col-md-6 col-xxl-3">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Origen de venta</label>
+                <div class="btn-group w-100" role="group" aria-label="Origen de venta">
+                    @foreach (var (valor, texto, icono) in opcionesOrigen)
+                    {
+                        <input type="radio" class="btn-check" name="origen" id="origen-@valor" autocomplete="off"
+                               checked="@(origen == valor)" @onchange="() => origen = valor" />
+                        <label class="btn btn-outline-primary btn-sm" for="origen-@valor"><i class="bi @icono me-1"></i>@texto</label>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6 col-xxl-3">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Tipo de fecha</label>
+                <div class="btn-group w-100" role="group" aria-label="Tipo de fecha">
+                    <input type="radio" class="btn-check" name="tipofecha" id="tf-turno" autocomplete="off"
+                           checked="@(tipoFecha == TipoFechaReporte.Turno)" @onchange="() => tipoFecha = TipoFechaReporte.Turno" />
+                    <label class="btn btn-outline-primary btn-sm" for="tf-turno"><i class="bi bi-clock-history me-1"></i>F. Turno</label>
+
+                    <input type="radio" class="btn-check" name="tipofecha" id="tf-emision" autocomplete="off"
+                           checked="@(tipoFecha == TipoFechaReporte.Emision)" @onchange="() => tipoFecha = TipoFechaReporte.Emision" />
+                    <label class="btn btn-outline-primary btn-sm" for="tf-emision"><i class="bi bi-calendar-event me-1"></i>F. Emisión</label>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3 col-xxl-2">
+                <label for="fecha-desde" class="form-label small fw-semibold text-body-secondary mb-1">Desde</label>
+                <input id="fecha-desde" type="date" class="form-control form-control-sm" @bind="desde" />
+            </div>
+
+            <div class="col-6 col-md-3 col-xxl-2">
+                <label for="fecha-hasta" class="form-label small fw-semibold text-body-secondary mb-1">Hasta</label>
+                <input id="fecha-hasta" type="date" class="form-control form-control-sm" @bind="hasta" />
+            </div>
+
+            <div class="col-12 col-md-6 col-xxl-2">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Ordenado por</label>
+                <div class="btn-group w-100" role="group" aria-label="Ordenado por">
+                    <input type="radio" class="btn-check" name="orden" id="orden-fecha" autocomplete="off"
+                           checked="@(orden == OrdenReporte.Fecha)" @onchange="() => orden = OrdenReporte.Fecha" />
+                    <label class="btn btn-outline-primary btn-sm" for="orden-fecha">Fecha</label>
+
+                    <input type="radio" class="btn-check" name="orden" id="orden-serie" autocomplete="off"
+                           checked="@(orden == OrdenReporte.Serie)" @onchange="() => orden = OrdenReporte.Serie" />
+                    <label class="btn btn-outline-primary btn-sm" for="orden-serie">Serie</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mt-3 pt-3 border-top">
+            <div class="d-flex flex-wrap gap-2 align-items-center small">
+                <span class="text-body-secondary">Rápido:</span>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => FijarTurno(0)">Turno actual</button>
+                <span class="text-body-tertiary">·</span>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => FijarTurno(-1)">Turno anterior</button>
+                @if (tipoFecha == TipoFechaReporte.Turno)
+                {
+                    <span class="badge bg-info bg-opacity-10 text-info-emphasis border border-info border-opacity-25 fw-normal text-wrap text-start">
+                        <i class="bi bi-info-circle me-1"></i>Incluye ventas del @desde.ToString("dd/MM/yyyy") 06:00 al @hasta.AddDays(1).ToString("dd/MM/yyyy") 06:00
+                    </span>
+                }
+            </div>
+
+            <div class="d-flex gap-2 ms-auto">
+                @if (cargando)
+                {
+                    <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Cancelar">Cancelar</button>
+                }
+                <button type="button" class="btn btn-primary btn-sm px-4" @onclick="ProcesarAsync" disabled="@cargando">
+                    @if (cargando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span><span>Procesando...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-play-fill me-1"></i><span>Procesar</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger d-flex align-items-start d-print-none" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+        <div class="text-break">@mensajeError</div>
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="text-center py-5 text-body-secondary d-print-none">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 small mb-0">Consultando documentos en @GrifoContext.GrifoActivoId... puede tardar hasta un minuto en rangos grandes.</p>
+    </div>
+}
+else if (filas is not null && filas.Count == 0)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5 text-body-secondary">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            No existe información para mostrar con los filtros seleccionados.
+        </div>
+    </div>
+}
+else if (HayDatos && filtroAplicado is not null)
+{
+    <!-- ═══════════════ CABECERA IMPRESA (como el Crystal original) ═══════════════ -->
+    <div class="reporte-cabecera-impresion d-none d-print-flex">
+        <div>
+            <div class="fw-bold">@nombreEmpresa</div>
+            <div class="small">@nombreEstacion</div>
+        </div>
+        <div class="text-center">
+            <div class="fw-bold fs-5">RESUMEN POR TIPO DE DOCUMENTO</div>
+            <div class="fw-bold">@TituloFiltro(filtroAplicado)</div>
+            <div class="small">@OrigenTexto(filtroAplicado.Origen)</div>
+        </div>
+        <div class="text-end small">
+            <div>F.Emisión: @fechaProceso.ToString("dd/MM/yyyy")</div>
+            <div>H.Emisión: @fechaProceso.ToString("hh:mm:ss tt", CultureInfo.InvariantCulture)</div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ KPIs ═══════════════ -->
+    <div class="row g-3 mb-4 d-print-none">
+        <div class="col-6 col-lg-4 col-xxl">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                <div class="small text-body-secondary text-uppercase fw-semibold">Documentos</div>
+                <div class="fs-4 fw-bold text-body-emphasis">@totalGeneral.Documentos.ToString("N0", Cultura)</div>
+                <div class="small text-danger">@totalGeneral.Anulados anulados</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-4 col-xxl">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                <div class="small text-body-secondary text-uppercase fw-semibold">Cantidad (gal)</div>
+                <div class="fs-4 fw-bold text-body-emphasis">@totalGeneral.Cantidad.ToString("N3", Cultura)</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-4 col-xxl">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                <div class="small text-body-secondary text-uppercase fw-semibold">Valor venta</div>
+                <div class="fs-4 fw-bold text-body-emphasis">S/ @totalGeneral.ValorVenta.ToString("N2", Cultura)</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-lg-6 col-xxl">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                <div class="small text-body-secondary text-uppercase fw-semibold">Impuestos</div>
+                <div class="fs-4 fw-bold text-body-emphasis">S/ @totalGeneral.Impuestos.ToString("N2", Cultura)</div>
+            </div></div>
+        </div>
+        <div class="col-12 col-lg-6 col-xxl">
+            <div class="card border-0 shadow-sm h-100 text-white bg-widget-primary"><div class="card-body">
+                <div class="small text-white-50 text-uppercase fw-semibold">Total S/</div>
+                <div class="fs-4 fw-bold">S/ @totalGeneral.Total.ToString("N2", Cultura)</div>
+            </div></div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ RESUMEN POR TIPO Y SERIE ═══════════════ -->
+    <div class="card shadow-sm border-0 mb-4 reporte-bloque">
+        <div class="card-header py-3 border-bottom">
+            <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-list-columns-reverse text-primary me-2"></i>Resumen por tipo de documento y serie</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0 reporte-tabla">
+                    <thead class="table-head-themed">
+                        <tr>
+                            <th class="ps-3">TD</th>
+                            <th>Serie</th>
+                            <th class="text-end">Del N°</th>
+                            <th class="text-end">Al N°</th>
+                            <th class="text-end">Docs.</th>
+                            <th class="text-end">Anul.</th>
+                            <th class="text-end">Cantidad</th>
+                            <th class="text-end">V. Venta</th>
+                            <th class="text-end">Impuestos</th>
+                            <th class="text-end pe-3">Total S/</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var grupo in grupos)
+                        {
+                            @foreach (var serie in grupo.Series)
+                            {
+                                <tr>
+                                    <td class="ps-3 text-nowrap"><span class="text-body-secondary">@grupo.T</span> @grupo.Tipo</td>
+                                    <td class="font-monospace">@serie.Serie</td>
+                                    <td class="text-end font-monospace">@serie.NumeroDesde</td>
+                                    <td class="text-end font-monospace">@serie.NumeroHasta</td>
+                                    <td class="text-end">@serie.Totales.Documentos.ToString("N0", Cultura)</td>
+                                    <td class="text-end @(serie.Totales.Anulados > 0 ? "text-danger fw-semibold" : "text-body-secondary")">@serie.Totales.Anulados</td>
+                                    <td class="text-end">@serie.Totales.Cantidad.ToString("N3", Cultura)</td>
+                                    <td class="text-end">@serie.Totales.ValorVenta.ToString("N2", Cultura)</td>
+                                    <td class="text-end">@serie.Totales.Impuestos.ToString("N2", Cultura)</td>
+                                    <td class="text-end pe-3 fw-semibold">@serie.Totales.Total.ToString("N2", Cultura)</td>
+                                </tr>
+                            }
+                            <tr class="fila-subtotal">
+                                <td class="ps-3" colspan="4">Subtotal @grupo.Tipo</td>
+                                <td class="text-end">@grupo.Totales.Documentos.ToString("N0", Cultura)</td>
+                                <td class="text-end">@grupo.Totales.Anulados</td>
+                                <td class="text-end">@grupo.Totales.Cantidad.ToString("N3", Cultura)</td>
+                                <td class="text-end">@grupo.Totales.ValorVenta.ToString("N2", Cultura)</td>
+                                <td class="text-end">@grupo.Totales.Impuestos.ToString("N2", Cultura)</td>
+                                <td class="text-end pe-3">@grupo.Totales.Total.ToString("N2", Cultura)</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr class="fila-total">
+                            <td class="ps-3" colspan="4">TOTAL GENERAL</td>
+                            <td class="text-end">@totalGeneral.Documentos.ToString("N0", Cultura)</td>
+                                <td class="text-end">@totalGeneral.Anulados</td>
+                                <td class="text-end">@totalGeneral.Cantidad.ToString("N3", Cultura)</td>
+                                <td class="text-end">@totalGeneral.ValorVenta.ToString("N2", Cultura)</td>
+                                <td class="text-end">@totalGeneral.Impuestos.ToString("N2", Cultura)</td>
+                                <td class="text-end pe-3">@totalGeneral.Total.ToString("N2", Cultura)</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ DETALLE DE DOCUMENTOS ═══════════════ -->
+    <div class="card shadow-sm border-0 mb-4 reporte-bloque">
+        <div class="card-header py-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between">
+            <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-receipt text-primary me-2"></i>Detalle de documentos</h6>
+            <div class="d-flex flex-wrap gap-2 align-items-center d-print-none">
+                <div class="input-group input-group-sm reporte-buscador">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" class="form-control" placeholder="Serie, número, RUC o nombre..."
+                           aria-label="Buscar documento"
+                           @bind="busqueda" @bind:event="oninput" @bind:after="AplicarBusqueda" />
+                </div>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="solo-anulados"
+                           @bind="soloAnulados" @bind:after="AplicarBusqueda" />
+                    <label class="form-check-label small" for="solo-anulados">Solo anulados</label>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            @if (!detalle.Any())
+            {
+                <div class="text-center py-4 text-body-secondary small">Ningún documento coincide con la búsqueda.</div>
+            }
+            else
+            {
+                <div class="table-responsive reporte-scroll">
+                    <table class="table table-sm table-hover align-middle mb-0 reporte-tabla">
+                        <thead class="table-head-themed">
+                            <tr>
+                                <th class="ps-3">TD</th>
+                                <th>Ser</th>
+                                <th class="text-end">#Doc</th>
+                                <th>Fecha</th>
+                                <th>#RUC</th>
+                                <th>Nombre o razón social</th>
+                                <th class="text-center">Estado</th>
+                                <th class="text-end">Cantidad</th>
+                                <th class="text-end">V. Venta</th>
+                                <th class="text-end">Impuestos</th>
+                                <th class="text-end pe-3">Total S/</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var grupo in detalle)
+                            {
+                                <tr class="fila-grupo">
+                                    <td class="ps-3" colspan="11">@grupo.T · @grupo.Tipo.ToUpperInvariant() <span class="fw-normal text-body-secondary">(@grupo.Totales.Documentos documentos)</span></td>
+                                </tr>
+                                @foreach (var f in grupo.Filas)
+                                {
+                                    <tr class="@(f.EsAnulado ? "fila-anulada" : "")">
+                                        <td class="ps-3 text-body-secondary">@f.T</td>
+                                        <td class="font-monospace">@f.SER</td>
+                                        <td class="text-end font-monospace">@f.NRODOC</td>
+                                        <td class="text-nowrap">@f.FDOC</td>
+                                        <td class="font-monospace text-nowrap">@f.Ruc</td>
+                                        <td class="reporte-col-nombre" title="@f.Descri">@f.Descri</td>
+                                        <td class="text-center">
+                                            @if (f.EsAnulado)
+                                            {
+                                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">Anulado</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-body-secondary">@f.ESTADO</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">@f.CANTIDAD.ToString("N3", Cultura)</td>
+                                        <td class="text-end">@f.ValorVenta.ToString("N2", Cultura)</td>
+                                        <td class="text-end">@f.IGV.ToString("N2", Cultura)</td>
+                                        <td class="text-end pe-3 fw-semibold">@f.ImporteVenta.ToString("N2", Cultura)</td>
+                                    </tr>
+                                }
+                                <tr class="fila-subtotal">
+                                    <td class="ps-3" colspan="7">Subtotal @grupo.Tipo</td>
+                                    <td class="text-end">@grupo.Totales.Cantidad.ToString("N3", Cultura)</td>
+                                    <td class="text-end">@grupo.Totales.ValorVenta.ToString("N2", Cultura)</td>
+                                    <td class="text-end">@grupo.Totales.Impuestos.ToString("N2", Cultura)</td>
+                                    <td class="text-end pe-3">@grupo.Totales.Total.ToString("N2", Cultura)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+        <div class="card-footer py-2 px-3 small text-body-secondary d-flex flex-wrap gap-2 justify-content-between d-print-none">
+            <span>@DocumentosVisibles.ToString("N0", Cultura) de @filas!.Count.ToString("N0", Cultura) documentos</span>
+            <span>Procesado: @fechaProceso.ToString("dd/MM/yyyy HH:mm:ss") · @tiempoMs ms · @GrifoContext.GrifoActivoId</span>
+        </div>
+    </div>
+}
+
+@code {
+    // El turno va de 06:00 del día a 06:00 del día siguiente
+    private const int HoraInicioTurno = 6;
+    private static readonly CultureInfo Cultura = CultureInfo.InvariantCulture;
+
+    private static readonly (OrigenVenta Valor, string Texto, string Icono)[] opcionesOrigen =
+    {
+        (OrigenVenta.Combustible, "Combustible", "bi-fuel-pump"),
+        (OrigenVenta.Market, "Market", "bi-shop"),
+        (OrigenVenta.Todo, "Todo", "bi-collection"),
+    };
+
+    // Filtros (valores por defecto como el formulario original, con "F. Turno")
+    private OrigenVenta origen = OrigenVenta.Combustible;
+    private TipoFechaReporte tipoFecha = TipoFechaReporte.Turno;
+    private OrdenReporte orden = OrdenReporte.Fecha;
+    private DateOnly desde;
+    private DateOnly hasta;
+
+    // Resultado
+    private IReadOnlyList<ResumenTipoDocumento>? filas;
+    private FiltroResumenTipoDocumento? filtroAplicado;
+    private List<GrupoTipo> grupos = new();
+    private List<GrupoTipo> detalle = new();
+    private Totales totalGeneral = Totales.Vacio;
+    private DateTime fechaProceso;
+    private long tiempoMs;
+
+    private string busqueda = string.Empty;
+    private bool soloAnulados;
+
+    private bool cargando;
+    private string? mensajeError;
+    private CancellationTokenSource? cts;
+
+    private string nombreEmpresa = string.Empty;
+    private string nombreEstacion = string.Empty;
+
+    private bool HayDatos => filas is { Count: > 0 };
+    private int DocumentosVisibles => detalle.Sum(g => g.Filas.Count);
+
+    protected override async Task OnInitializedAsync()
+    {
+        FijarTurno(0);
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await CargarNombresAsync();
+    }
+
+    // Fecha de turno vigente: antes de las 06:00 todavía corre el turno del día anterior
+    private void FijarTurno(int diasDesplazamiento)
+    {
+        var ahora = DateTime.Now;
+        var fechaTurno = DateOnly.FromDateTime(ahora.Hour < HoraInicioTurno ? ahora.AddDays(-1) : ahora)
+                                 .AddDays(diasDesplazamiento);
+        desde = fechaTurno;
+        hasta = fechaTurno;
+    }
+
+    private async Task ProcesarAsync()
+    {
+        if (desde > hasta)
+        {
+            mensajeError = "La fecha 'Desde' no puede ser mayor que la fecha 'Hasta'.";
+            return;
+        }
+
+        cts?.Cancel();
+        cts?.Dispose();
+        cts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        var filtro = new FiltroResumenTipoDocumento(origen, tipoFecha, desde, hasta, orden);
+        cargando = true;
+        mensajeError = null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            var resultado = await ReporteFiscalRepository.GetResumenTipoDocumentoAsync(filtro, token);
+            filas = resultado;
+            filtroAplicado = filtro;
+            fechaProceso = DateTime.Now;
+            tiempoMs = sw.ElapsedMilliseconds;
+            busqueda = string.Empty;
+            soloAnulados = false;
+            ConstruirResumen();
+        }
+        catch (Exception) when (token.IsCancellationRequested)
+        {
+            // Cancelado por el usuario o por cambio de grifo: no es un error
+        }
+        catch (Exception ex)
+        {
+            filas = null;
+            mensajeError = $"Ocurrió un problema al procesar el reporte: {ex.Message}";
+        }
+        finally
+        {
+            // Solo la consulta más reciente apaga el indicador de carga
+            if (cts?.Token == token)
+            {
+                cargando = false;
+            }
+        }
+    }
+
+    private void Cancelar()
+    {
+        cts?.Cancel();
+        cargando = false;
+    }
+
+    private void ConstruirResumen()
+    {
+        grupos = AgruparPorTipo(filas!);
+        totalGeneral = Totales.De(filas!);
+        AplicarBusqueda();
+    }
+
+    private void AplicarBusqueda()
+    {
+        IEnumerable<ResumenTipoDocumento> visibles = filas ?? Array.Empty<ResumenTipoDocumento>();
+
+        if (soloAnulados)
+        {
+            visibles = visibles.Where(f => f.EsAnulado);
+        }
+
+        var texto = busqueda.Trim();
+        if (texto.Length > 0)
+        {
+            visibles = visibles.Where(f =>
+                $"{f.SER}-{f.NRODOC}".Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || f.NRODOC.ToString().Contains(texto)
+                || (f.Ruc?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (f.Descri?.Contains(texto, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+
+        detalle = AgruparPorTipo(visibles);
+    }
+
+    // Agrupa por tipo de documento conservando el orden que devuelve el SP (fecha o serie)
+    private static List<GrupoTipo> AgruparPorTipo(IEnumerable<ResumenTipoDocumento> origenFilas) =>
+        origenFilas
+            .GroupBy(f => (f.T, f.TIP))
+            .OrderBy(g => g.Key.T)
+            .Select(g =>
+            {
+                var lista = g.ToList();
+                var series = lista
+                    .GroupBy(f => f.SER)
+                    .OrderBy(s => s.Key)
+                    .Select(s => new ResumenSerie(s.Key, s.Min(f => f.NRODOC), s.Max(f => f.NRODOC), Totales.De(s)))
+                    .ToList();
+                return new GrupoTipo(g.Key.T, g.Key.TIP, lista, series, Totales.De(lista));
+            })
+            .ToList();
+
+    private async Task CargarNombresAsync()
+    {
+        nombreEstacion = ConnectionFactory.ObtenerEstaciones()
+                             .FirstOrDefault(e => e.Id == GrifoContext.GrifoActivoId)?.Nombre
+                         ?? GrifoContext.GrifoActivoId;
+        try
+        {
+            var empresa = (await EmpresaRepository.GetEmpresaAsync()).FirstOrDefault();
+            nombreEmpresa = empresa?.NO_EMPR ?? nombreEstacion;
+            if (!string.IsNullOrWhiteSpace(empresa?.DE_NOMB_CORT)) nombreEstacion = empresa.DE_NOMB_CORT;
+        }
+        catch (Exception)
+        {
+            nombreEmpresa = nombreEstacion;
+        }
+    }
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            // Los resultados eran de otro grifo: se descartan
+            cts?.Cancel();
+            cargando = false;
+            filas = null;
+            filtroAplicado = null;
+            grupos.Clear();
+            detalle.Clear();
+            mensajeError = null;
+            await CargarNombresAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ImprimirAsync() => await JS.InvokeVoidAsync("print");
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+        cts?.Cancel();
+        cts?.Dispose();
+    }
+}

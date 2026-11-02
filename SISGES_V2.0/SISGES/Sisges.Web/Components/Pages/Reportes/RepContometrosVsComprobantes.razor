@@ -1,0 +1,200 @@
+﻿@page "/reportes/contometros-vs-comprobantes"
+@using System.Globalization
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IReporteContometroRepository ReporteRepo
+@inject IAdminDocumentosRepository AdminDocRepo
+@inject IGrifoContext GrifoContext
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+<PageTitle>Contómetros vs Comprobantes - SISGES</PageTitle>
+<!-- CABECERA -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3 d-print-none">
+    <div>
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-shield-check text-primary me-2"></i>Contómetros vs Comprobantes
+        </h4>
+        <small class="text-body-secondary">Conciliación de Galonaje y Venta · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="ImprimirAsync" disabled="@(!filas.Any())">
+            <i class="bi bi-printer me-1"></i>Imprimir
+        </button>
+        <button class="btn btn-outline-success btn-sm" type="button" @onclick="ExportarCsvAsync" disabled="@(!filas.Any())">
+            <i class="bi bi-filetype-csv me-1"></i>Exportar CSV
+        </button>
+    </div>
+</div>
+<!-- FILTROS -->
+<div class="card shadow-sm border-0 mb-4 d-print-none">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Fecha Turno</label>
+                <input type="date" class="form-control form-control-sm" @bind="filtro.Fecha" />
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Turno</label>
+                <select class="form-select form-select-sm" @bind="filtro.Turno">
+                    <option value="0">Todos los Turnos</option>
+                    @foreach (var t in turnos)
+                    {
+                        <option value="@t.Codigo">@t.Descripcion</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <button class="btn btn-primary btn-sm w-100" type="button" @onclick="ConsultarAsync" disabled="@cargando">
+                    @if (cargando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        <span>Consultando...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-search me-1"></i>
+                        <span>Consultar</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- MENSAJES DE ERROR / ESTADO -->
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger py-2 mb-3" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>@mensajeError
+    </div>
+}
+<!-- TABLA DE RESULTADOS -->
+@if (filas.Any())
+{
+    <div class="card shadow-sm border-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 text-end font-monospace" style="font-size: 0.85rem;">
+                <thead class="table-light text-center font-sans-serif">
+                    <tr>
+                        <th class="text-start" style="min-width: 260px;">Concepto / Comprobante</th>
+                        <th>G84</th>
+                        <th>G90</th>
+                        <th>G95</th>
+                        <th>G97</th>
+                        <th>D2 / DB5</th>
+                        <th>D1</th>
+                        <th>GLP</th>
+                        <th>GNV</th>
+                        <th class="table-primary">Tot. Galones</th>
+                        <th class="table-success">Total S/.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in filas)
+                    {
+                        var rowClass = item.TIPOREG switch
+                        {
+                            1 => "table-light fw-semibold",
+                            4 => "table-warning fw-bold",
+                            _ => ""
+                        };
+                        <tr class="@rowClass">
+                            <td class="text-start text-nowrap font-sans-serif">
+                                @if (item.TIPOREG == 4)
+                                {
+                                    <i class="bi bi-arrow-left-right text-warning me-1"></i>
+                                }
+                                @item.DSC
+                            </td>
+                            <td>@Fmt(item.G84)</td>
+                            <td>@Fmt(item.G90)</td>
+                            <td>@Fmt(item.G95)</td>
+                            <td>@Fmt(item.G97)</td>
+                            <td>@Fmt(item.GD2)</td>
+                            <td>@Fmt(item.GD1)</td>
+                            <td>@Fmt(item.GLP)</td>
+                            <td>@Fmt(item.GNV)</td>
+                            <td class="table-primary fw-bold">@Fmt(item.TOTGLN)</td>
+                            <td class="table-success fw-bold">@Fmt(item.TOT)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else if (!cargando && consultado)
+{
+    <div class="alert alert-info text-center py-4">
+        <i class="bi bi-info-circle display-6 d-block mb-2"></i>
+        No se encontraron registros de contómetros ni ventas para la fecha y turno seleccionados.
+    </div>
+}
+
+@code{
+
+    private FiltroContometroVsComprobantes filtro = new();
+    private List<ContometrosVsComprobantesItem> filas = new();
+    private IReadOnlyList<OpcionCatalogo> turnos = Array.Empty<OpcionCatalogo>();
+    private bool cargando = false;
+    private bool consultado = false;
+    private string? mensajeError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var turnoActual = await AdminDocRepo.GetTurnoActualAsync();
+            if (turnoActual is not null)
+            {
+                filtro.Fecha = DateOnly.FromDateTime(turnoActual.Fecha);
+                filtro.Turno = (byte)turnoActual.Turno;
+            }
+            turnos = await AdminDocRepo.GetTurnosAsync();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "No se pudo cargar la configuracion de los turnos: " + ex.Message;
+        }
+    }
+
+    private async Task ConsultarAsync()
+    {
+        cargando = true;
+        mensajeError = null;
+        consultado = true;
+        try
+        {
+            var data = await ReporteRepo.GetContometrosVsComprobantesAsync(filtro.Fecha, filtro.Turno, filtro.Empresa, filtro.Estacion);
+            filas = data.ToList();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "Error al consultar contómetros vs comprobantes: " + ex.Message;
+            filas.Clear();
+
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+    
+    private string Fmt(decimal valor) => valor == 0 ? "-" : valor.ToString("N3", CultureInfo.InvariantCulture);
+    private async Task ImprimirAsync() => await JS.InvokeVoidAsync("window.print");
+
+    private async Task ExportarCsvAsync()
+    {
+        if (!filas.Any()) return;
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("Concepto;G84;G90;G95;G97;GD2;GD1;GLP;GNV;Total Galones;Totales Soles");
+        foreach (var f in filas)
+        {
+            csv.AppendLine($"\"{f.DSC}\";{f.G84};{f.G90};{f.G95};{f.G97};{f.GD2};{f.GD1};{f.GLP};{f.GNV};{f.TOTGLN};{f.TOT}");
+        }
+        var bytes = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        await JS.InvokeVoidAsync("descargaArchivo", $"Contometros_VS_COMPROBANTES_{filtro.Fecha:yyyyMMdd}_T{filtro.Turno}.csv","text/csv;charset=utf-8", bytes);
+    }
+
+}
+
+

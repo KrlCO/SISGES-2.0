@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Sisges.Aplication\Sisges.Aplication.csproj" />
+      <ProjectReference Include="..\Sisges.Infrastructure.Data\Sisges.Infrastructure.Data.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Components\Pages\Cobranzas\" />
+      <Folder Include="Components\Pages\Facturacion\" />
+      <Folder Include="Components\Pages\Procesos\" />
+      <Folder Include="Components\Pages\Seguridad\" />
+    </ItemGroup>
+
+</Project>

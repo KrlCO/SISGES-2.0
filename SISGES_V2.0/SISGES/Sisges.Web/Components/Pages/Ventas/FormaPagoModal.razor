@@ -1,0 +1,245 @@
+﻿@using System.Runtime.InteropServices.JavaScript
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IFormaPagoRepository FormaPagoRepository
+
+@* Forma de Pago por Documento Combustible (frmFPagoPlaya.frm). Se abre desde la lista de AdminDocumentoIsla. *@
+<div class="modal d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="fp-titulo">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content shadow">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold text-body-emphasis" id="fp-titulo">
+                    <i class="bi bi-credit-card text-primary me-2"></i>Forma de pago · @Documento.DE_NOMB @Documento.NRODOC
+                </h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="() => OnCerrar.InvokeAsync(false)" disabled="@guardando"></button>
+            </div>
+
+            <div class="modal-body">
+                @if (cargando)
+                {
+                    <div class="text-center text-body-secondary py-4">
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando forma de pago...
+                    </div>
+                }
+                else if (documento is null)
+                {
+                    <div class="alert alert-warning mb-0">@(mensajeError ?? "Documento no registrado o anulado.")</div>
+                }
+                else
+                {
+                    <div class="row g-2 mb-3 text-center">
+                        <div class="col-4">
+                            <div class="small text-body-secondary">Total documento</div>
+                            <div class="fs-5 fw-bold font-monospace">@documento.IM_TOTA.ToString("N2")</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="small text-body-secondary">Con tarjeta</div>
+                            <div class="fs-5 fw-bold font-monospace text-primary">@TotalTarjetas.ToString("N2")</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="small text-body-secondary">Efectivo</div>
+                            <div class="fs-5 fw-bold font-monospace @(Efectivo < 0 ? "text-danger" : "text-success")">@Efectivo.ToString("N2")</div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-2">
+                            <thead class="table-head-themed">
+                                <tr>
+                                    <th style="min-width: 10rem">Tarjeta</th>
+                                    <th style="min-width: 9rem">Nro. operación</th>
+                                    <th class="text-end" style="width: 9rem">Monto</th>
+                                    <th style="width: 3rem"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linea in lineas)
+                                {
+                                    <tr>
+                                        <td>
+                                            <select class="form-select form-select-sm" @bind="linea.CO_TARJ" disabled="@guardando">
+                                                <option value="0">Seleccionar...</option>
+                                                @foreach (var t in Tarjetas)
+                                                {
+                                                    <option value="@t.Codigo">@t.Nombre</option>
+                                                }
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input class="form-control form-control-sm font-monospace" maxlength="30" autocomplete="off"
+                                                   inputmode="numeric" data-solo="digitos" @bind="linea.NU_TARJ" disabled="@guardando" />
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm text-end font-monospace" min="0" step="0.01"
+                                                   data-solo="decimal" @bind="linea.IM_TOTA" @bind:event="oninput" disabled="@guardando" />
+                                        </td>
+                                        <td class="text-end">
+                                            <button type="button" class="btn btn-sm btn-outline-danger" title="Quitar"
+                                                    @onclick="() => lineas.Remove(linea)" disabled="@guardando">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" @onclick="AgregarLinea" disabled="@guardando">
+                        <i class="bi bi-plus-lg me-1"></i>Agregar tarjeta
+                    </button>
+                    @if (lineas.Count == 0)
+                    {
+                        <span class="small text-body-secondary ms-2">Sin tarjetas: el documento queda pagado en efectivo.</span>
+                    }
+
+                    @if (errores.Count > 0)
+                    {
+                        <div class="alert alert-danger mt-3 mb-0 small">
+                            @foreach (var e in errores)
+                            {
+                                <div>@e</div>
+                            }
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger mt-3 mb-0 small text-break">@mensajeError</div>
+                    }
+                    @if (confirmando)
+                    {
+                        <div class="alert alert-warning mt-3 mb-0 small">
+                            <i class="bi bi-exclamation-triangle me-1"></i>Se reemplazará la forma de pago del documento
+                            (@actuales.Count línea(s) actual(es) → @lineas.Count nueva(s)). ¿Confirmas?
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" @onclick="() => OnCerrar.InvokeAsync(false)" disabled="@guardando">Cancelar</button>
+                @if (documento is not null && !cargando)
+                {
+                    <button type="button" class="btn @(confirmando ? "btn-warning" : "btn-primary") px-4" @onclick="GuardarAsync" disabled="@guardando">
+                        @if (guardando)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span><span>Guardando...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-save me-1"></i><span>@(confirmando ? "Sí, guardar" : "Guardar")</span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal-backdrop show"></div>
+
+@code
+{
+    private const string UsuarioActual = "WEBADMIN";
+    private const int LargoMaximoOperacion = 30;
+
+    [Parameter, EditorRequired] public DocumentoVentaIsla Documento { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<TarjetaCredito>Tarjetas { get; set; } = Array.Empty<TarjetaCredito>();
+    [Parameter] public EventCallback<bool> OnCerrar { get; set; }
+
+    private DocumentoPorPagar? documento;
+    private IReadOnlyList<FormaPagoDocumento> actuales = Array.Empty<FormaPagoDocumento>();
+    private List<LineaPago> lineas = new();
+    private List<String> errores = new();
+
+    private bool cargando = true;
+    private bool guardando;
+    private bool confirmando;
+    private string? mensajeError;
+    
+    private decimal TotalTarjetas  => lineas.Sum(l=>l .IM_TOTA ?? 0);
+    private decimal Efectivo => (documento?.IM_TOTA ?? 0) - TotalTarjetas;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            documento = await FormaPagoRepository.GetDocumentoAsync(Documento.CO_TDOC, Documento.CO_NSER, Documento.NU_NDOC);
+            if (documento is not null)
+            {
+                actuales = await FormaPagoRepository.GetFormasPagoAsync(Documento.CO_TDOC, Documento.CO_NSER, Documento.NU_NDOC);
+                lineas = actuales.Select(a => new LineaPago { CO_TARJ = a.CO_TARJ, NU_TARJ = a.NU_TARJ, IM_TOTA = a.IM_TOTA }).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            documento = null;
+            mensajeError = $"No se puede carga la forma de pago: {ex.Message}";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void AgregarLinea()
+    {
+        confirmando = false;
+        lineas.Add(new LineaPago { IM_TOTA = Efectivo > 0 ? Efectivo : null });
+    }
+
+    private async Task GuardarAsync()
+    {
+        mensajeError = null;
+        errores = Validar();
+        if (errores.Count > 0)
+        {
+            confirmando = true;
+            return;
+        }
+        guardando = true;
+        try
+        {
+            var nuevas = lineas.Select(l => new FormaPagoDocumento
+            {
+                CO_TARJ = l.CO_TARJ,
+                NU_TARJ = l.NU_TARJ.Trim(),
+                IM_TOTA = Math.Round(l.IM_TOTA ?? 0, 2)
+            }).ToList();
+
+            await FormaPagoRepository.GuardarAsync(documento!, actuales, nuevas, UsuarioActual);
+            await OnCerrar.InvokeAsync(true);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se puede guardar la forma de pago: {ex.Message}";
+            confirmando = false;
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    private List<string> Validar()
+    {
+        var lista = new List<string>();
+        for (var i = 0; i < lineas.Count; i++)
+        {
+            var l = lineas[i];
+            var n = "Linea" + (i + 1) + ": ";
+            if(l.CO_TARJ <= 0) lista.Add(n + "Selecciona la tarjeta");
+            else if(l.NU_TARJ.Trim().Length > LargoMaximoOperacion) lista.Add(n + "el número de operación admite hasta 30 caracteres.");
+            if((l.IM_TOTA ?? 0) <= 0) lista.Add(n + "el monto debe ser mayor a 0");
+        }
+        if(lineas.GroupBy(l => (l.CO_TARJ, l.NU_TARJ.Trim())).Any(g => g.Count() > 1)) lista.Add("Hay dos lineas con la misma tarjeta y el mismo número de operación");
+        if(TotalTarjetas > (documento?.IM_TOTA ?? 0)) lista.Add("El monto pagado con tarjeta (" + TotalTarjetas.ToString("N2") + ") es mayor al total del documento.");
+        return lista;
+    }
+
+    private class LineaPago
+    {
+        public int CO_TARJ { get; set; }
+        public string NU_TARJ { get; set; } = string.Empty;
+        public decimal? IM_TOTA { get; set; }
+    }
+    
+}

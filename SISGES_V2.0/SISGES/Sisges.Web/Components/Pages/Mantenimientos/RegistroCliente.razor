@@ -1,0 +1,623 @@
+﻿@page "/mantenimientos/clientes/nuevo"
+@page "/mantenimientos/clientes/{Codigo:int}"
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IClienteRepository ClienteRepository
+@inject IGrifoContext GrifoContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>@(EsEdicion ? "Editar cliente" : "Registro de Clientes") - SISGES</PageTitle>
+
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            @if (EsEdicion)
+            {
+                <i class="bi bi-pencil-square text-primary me-2"></i><span>Editar cliente @Codigo</span>
+            }
+            else
+            {
+                <i class="bi bi-person-plus-fill text-primary me-2"></i><span>Registro de Clientes</span>
+            }
+        </h4>
+        <small class="text-body-secondary">Mantenimientos · reemplaza a <code>frmMaeCliente</code> · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <a href="mantenimientos/clientes" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Volver a la lista
+    </a>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeExito))
+{
+    <div class="alert alert-success d-flex align-items-center" role="alert">
+        <i class="bi bi-check-circle-fill fs-5 me-2"></i>
+        <div>@mensajeExito</div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger d-flex align-items-start" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+        <div class="text-break">@mensajeError</div>
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="text-center text-body-secondary py-5">
+        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando cliente...
+    </div>
+}
+else if (EsEdicion && clienteNoEncontrado)
+{
+    <div class="alert alert-warning" role="alert">
+        No se encontró el cliente @Codigo entre los clientes activos de este grifo.
+        <a href="mantenimientos/clientes" class="alert-link">Volver a la lista</a>
+    </div>
+}
+else
+{
+<EditForm EditContext="editContext" OnValidSubmit="GuardarAsync">
+    <DataAnnotationsValidator />
+
+    <!-- ═══════════════ DATOS DEL CLIENTE ═══════════════ -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header py-3 border-bottom">
+            <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-person-vcard text-primary me-2"></i>Datos del cliente</h6>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-12">
+                    @* En edición no se cambia el tipo de persona: el RUC/DNI identifica al cliente *@
+                    <InputRadioGroup @bind-Value="cliente.TipoPersona">
+                        <div class="btn-group" role="group" aria-label="Tipo de persona">
+                            <InputRadio class="btn-check" id="tp-juridica" Value="TipoPersona.Juridica" disabled="@EsEdicion" />
+                            <label class="btn btn-outline-primary btn-sm" for="tp-juridica"><i class="bi bi-building me-1"></i>Persona Jurídica (RUC)</label>
+                            <InputRadio class="btn-check" id="tp-natural" Value="TipoPersona.Natural" disabled="@EsEdicion" />
+                            <label class="btn btn-outline-primary btn-sm" for="tp-natural"><i class="bi bi-person me-1"></i>Persona Natural (DNI)</label>
+                        </div>
+                    </InputRadioGroup>
+                </div>
+
+                @if (cliente.TipoPersona == TipoPersona.Juridica)
+                {
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="ruc" class="form-label small fw-semibold">RUC <span class="text-danger">*</span></label>
+                        <InputText id="ruc" class="form-control font-monospace" maxlength="11" inputmode="numeric"
+                                   data-solo="digitos" autocomplete="off"
+                                   @bind-Value="cliente.NU_RUC" @bind-Value:after="VerificarDuplicadosAsync" />
+                        <ValidationMessage For="() => cliente.NU_RUC" />
+                    </div>
+                    <div class="col-12 col-md-8 col-xl-9">
+                        <label for="rsoc" class="form-label small fw-semibold">Razón social <span class="text-danger">*</span></label>
+                        <InputText id="rsoc" class="form-control text-uppercase" maxlength="50" data-solo="razon"
+                                   @bind-Value="cliente.NU_RSOC" @bind-Value:after="VerificarDuplicadosAsync" />
+                        <ValidationMessage For="() => cliente.NU_RSOC" />
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label for="repleg" class="form-label small fw-semibold">Representante legal</label>
+                        <InputText id="repleg" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.NO_REPR_LEGA" />
+                    </div>
+                }
+                else
+                {
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="dni" class="form-label small fw-semibold">DNI <span class="text-danger">*</span></label>
+                        <InputText id="dni" class="form-control font-monospace" maxlength="8" inputmode="numeric"
+                                   data-solo="digitos" autocomplete="off"
+                                   @bind-Value="cliente.NU_DOCU_IDEN" @bind-Value:after="VerificarDuplicadosAsync" />
+                        <ValidationMessage For="() => cliente.NU_DOCU_IDEN" />
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="appat" class="form-label small fw-semibold">Apellido paterno <span class="text-danger">*</span></label>
+                        <InputText id="appat" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.DE_APEL_PATE" />
+                        <ValidationMessage For="() => cliente.DE_APEL_PATE" />
+                    </div>
+                    <div class="col-12 col-md-4 col-xl-3">
+                        <label for="apmat" class="form-label small fw-semibold">Apellido materno <span class="text-danger">*</span></label>
+                        <InputText id="apmat" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.DE_APEL_MATE" />
+                        <ValidationMessage For="() => cliente.DE_APEL_MATE" />
+                    </div>
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <label for="nomb" class="form-label small fw-semibold">Nombre(s) <span class="text-danger">*</span></label>
+                        <InputText id="nomb" class="form-control text-uppercase" maxlength="30" data-solo="letras"
+                                   @bind-Value="cliente.NO_CLIE" @bind-Value:after="VerificarDuplicadosAsync" />
+                        <ValidationMessage For="() => cliente.NO_CLIE" />
+                    </div>
+                }
+
+                <div class="col-12 col-md-6">
+                    <label for="giro" class="form-label small fw-semibold">Giro del negocio</label>
+                    <InputText id="giro" class="form-control text-uppercase" maxlength="50" data-solo="razon" @bind-Value="cliente.DE_GIRO_EMPR" />
+                </div>
+                <div class="col-12 col-sm-6 col-md-4 col-xl-2">
+                    <label for="fing" class="form-label small fw-semibold">Fecha de ingreso</label>
+                    <InputDate id="fing" class="form-control" @bind-Value="cliente.FE_INGR" />
+                </div>
+                <div class="col-12 col-sm-6 col-md-4 col-xl-2">
+                    <label for="tcli" class="form-label small fw-semibold">Tipo de cliente <span class="text-danger">*</span></label>
+                    <InputSelect id="tcli" class="form-select" @bind-Value="cliente.CO_TCLI">
+                        @foreach (var t in tiposCliente)
+                        {
+                            <option value="@t.CO_TCLI">@t.NO_TCLI</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => cliente.CO_TCLI" />
+                </div>
+                <div class="col-12 col-sm-6 col-md-4 col-xl-2">
+                    <label for="temi" class="form-label small fw-semibold">Tipo de emisión <span class="text-danger">*</span></label>
+                    <InputSelect id="temi" class="form-select" @bind-Value="cliente.CO_TEMI">
+                        @foreach (var t in tiposEmision)
+                        {
+                            <option value="@t.CO_TEMI">@t.DE_NOMB</option>
+                        }
+                    </InputSelect>
+                    <ValidationMessage For="() => cliente.CO_TEMI" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ DIRECCIÓN Y COMUNICACIÓN ═══════════════ -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header py-3 border-bottom">
+            <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-geo-alt text-primary me-2"></i>Dirección y comunicación</h6>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-12 col-lg-8">
+                    <label for="domi" class="form-label small fw-semibold">Dirección</label>
+                    <InputText id="domi" class="form-control text-uppercase" maxlength="100" @bind-Value="cliente.DE_DOMI" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label for="geog" class="form-label small fw-semibold">Ubigeo</label>
+                    <InputText id="geog" class="form-control font-monospace" maxlength="8" inputmode="numeric" data-solo="digitos"
+                               placeholder="Ej. 15013515" @bind-Value="cliente.CO_GEOG" />
+                    <ValidationMessage For="() => cliente.CO_GEOG" />
+                </div>
+                <div class="col-12">
+                    <label for="refe" class="form-label small fw-semibold">Referencia</label>
+                    <InputText id="refe" class="form-control text-uppercase" maxlength="100" @bind-Value="cliente.DE_REFE" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <label for="tel1" class="form-label small fw-semibold">Teléfono 1</label>
+                    <InputText id="tel1" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="cliente.NU_TEL1" />
+                    <ValidationMessage For="() => cliente.NU_TEL1" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <label for="tel2" class="form-label small fw-semibold">Teléfono 2</label>
+                    <InputText id="tel2" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="cliente.NU_TEL2" />
+                    <ValidationMessage For="() => cliente.NU_TEL2" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-2">
+                    <label for="fax" class="form-label small fw-semibold">Fax</label>
+                    <InputText id="fax" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="cliente.NU_FAX" />
+                    <ValidationMessage For="() => cliente.NU_FAX" />
+                </div>
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label for="mail" class="form-label small fw-semibold">E-mail</label>
+                    <InputText id="mail" type="email" class="form-control" maxlength="30" data-solo="email" @bind-Value="cliente.DE_MAIL" />
+                    <ValidationMessage For="() => cliente.DE_MAIL" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ CONTACTO Y CRÉDITO ═══════════════ -->
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-person-lines-fill text-primary me-2"></i>Persona de contacto</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label for="cnom" class="form-label small fw-semibold">Nombres</label>
+                            <InputText id="cnom" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.NO_CONT_CLIE" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="cpat" class="form-label small fw-semibold">Ape. paterno</label>
+                            <InputText id="cpat" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.DE_APEL_PATE_CONT" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="cmat" class="form-label small fw-semibold">Ape. materno</label>
+                            <InputText id="cmat" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.DE_APEL_MATE_CONT" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label for="ccar" class="form-label small fw-semibold">Cargo</label>
+                            <InputText id="ccar" class="form-control text-uppercase" maxlength="50" data-solo="letras" @bind-Value="cliente.DE_CARG_CONT" />
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label for="ctel" class="form-label small fw-semibold">Teléfono</label>
+                            <InputText id="ctel" class="form-control" maxlength="15" inputmode="tel" data-solo="telefono" @bind-Value="cliente.NU_TELE_CONT" />
+                            <ValidationMessage For="() => cliente.NU_TELE_CONT" />
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <label for="cmail" class="form-label small fw-semibold">E-mail</label>
+                            <InputText id="cmail" type="email" class="form-control" maxlength="50" data-solo="email" @bind-Value="cliente.DE_CORR_CONT" />
+                            <ValidationMessage For="() => cliente.DE_CORR_CONT" />
+                        </div>
+                        <div class="col-12">
+                            <label for="cobs" class="form-label small fw-semibold">Observación</label>
+                            <InputTextArea id="cobs" class="form-control" rows="2" maxlength="100" @bind-Value="cliente.DE_OBSI_CONT" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header py-3 border-bottom">
+                    <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-credit-card text-primary me-2"></i>Crédito</h6>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-3">
+                        <InputCheckbox id="ccred" class="form-check-input" role="switch" @bind-Value="cliente.ControlCredito" />
+                        <label class="form-check-label" for="ccred">Activar control de crédito</label>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-sm-4 col-xl-12 col-xxl-4">
+                            <label for="lim" class="form-label small fw-semibold">Límite de crédito</label>
+                            <div class="input-group">
+                                <span class="input-group-text">S/</span>
+                                <InputNumber id="lim" class="form-control text-end" min="0" step="0.01" data-solo="decimal" @bind-Value="cliente.IM_LIMI_CRED" />
+                            </div>
+                            <ValidationMessage For="() => cliente.IM_LIMI_CRED" />
+                        </div>
+                        <div class="col-12 col-sm-4 col-xl-6 col-xxl-4">
+                            <label for="sobre" class="form-label small fw-semibold">Sobregiro</label>
+                            <div class="input-group">
+                                <span class="input-group-text">S/</span>
+                                <InputNumber id="sobre" class="form-control text-end" min="0" step="0.01" data-solo="decimal" @bind-Value="cliente.IM_SOBR_GIRO" />
+                            </div>
+                            <ValidationMessage For="() => cliente.IM_SOBR_GIRO" />
+                        </div>
+                        <div class="col-12 col-sm-4 col-xl-6 col-xxl-4">
+                            <label for="mini" class="form-label small fw-semibold">Monto mínimo</label>
+                            <div class="input-group">
+                                <span class="input-group-text">S/</span>
+                                <InputNumber id="mini" class="form-control text-end" min="0" step="0.01" data-solo="decimal" @bind-Value="cliente.IM_MONT_MINI" />
+                            </div>
+                            <ValidationMessage For="() => cliente.IM_MONT_MINI" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ ACCIONES ═══════════════ -->
+    <div class="d-flex flex-wrap gap-2 justify-content-end mb-4">
+        @if (!EsEdicion)
+        {
+            <button type="button" class="btn btn-outline-secondary" @onclick="Nuevo" disabled="@guardando">
+                <i class="bi bi-eraser me-1"></i>Limpiar
+            </button>
+        }
+        <button type="submit" class="btn btn-primary px-4" disabled="@guardando">
+            @if (guardando)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span><span>Guardando...</span>
+            }
+            else
+            {
+                <i class="bi bi-save me-1"></i><span>@(EsEdicion ? "Guardar cambios" : "Guardar cliente")</span>
+            }
+        </button>
+    </div>
+</EditForm>
+}
+
+@* ═══════════════ ALERTA: CLIENTE YA REGISTRADO ═══════════════ *@
+@if (mostrarAlertaDuplicado && duplicados.Count > 0)
+{
+    <div class="modal d-block" tabindex="-1" role="alertdialog" aria-modal="true" aria-labelledby="dup-titulo">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content shadow">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-danger" id="dup-titulo">
+                        <i class="bi bi-exclamation-octagon-fill me-2"></i>Cliente ya registrado
+                    </h5>
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CerrarAlerta"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-body-secondary">No se puede grabar: ya existe un cliente con el mismo RUC/DNI o la misma razón social.</p>
+                    <ul class="list-group">
+                        @foreach (var d in duplicados)
+                        {
+                            <li class="list-group-item">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <span class="fw-semibold text-break">@d.NU_RSOC</span>
+                                    <span class="text-nowrap small text-body-secondary">Cód. @d.CO_CLIE</span>
+                                </div>
+                                <div class="small text-body-secondary">
+                                    @DocumentoTexto(d) · coincide en <strong class="text-body-emphasis">@Coincidencias(d)</strong>
+                                    @if (d.EstaAnulado)
+                                    {
+                                        <span class="badge bg-secondary ms-1">ANULADO</span>
+                                    }
+                                </div>
+                                @if (!d.EstaAnulado)
+                                {
+                                    <a href="@RutaEditar(d.CO_CLIE)" class="small" @onclick="CerrarAlerta">
+                                        <i class="bi bi-pencil me-1"></i>Abrir este cliente
+                                    </a>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+                <div class="modal-footer border-top-0">
+                    <button type="button" class="btn btn-primary" @onclick="CerrarAlerta">Entendido</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop show"></div>
+}
+
+@code {
+    // TODO: reemplazar por el usuario autenticado cuando exista el login (CO_USUA es VARCHAR(8))
+    private const string UsuarioActual = "WEBADMIN";
+
+    [Parameter] public int? Codigo { get; set; }
+    private bool EsEdicion => Codigo is not null;
+
+    private Cliente cliente = new();
+    private EditContext editContext = default!;
+    private ValidationMessageStore mensajes = default!;
+
+    private IReadOnlyList<TipoCliente> tiposCliente = Array.Empty<TipoCliente>();
+    private IReadOnlyList<TipoEmision> tiposEmision = Array.Empty<TipoEmision>();
+    private decimal limiteCreditoPorDefecto;
+
+    private bool cargando;
+    private bool clienteNoEncontrado;
+    private bool guardando;
+    private string? mensajeExito;
+    private string? mensajeError;
+
+    private IReadOnlyList<ClienteDuplicado> duplicados = Array.Empty<ClienteDuplicado>();
+    private bool mostrarAlertaDuplicado;
+    private string? ultimaVerificacion;    // evita repetir la alerta al salir de otro campo con los mismos datos
+
+    protected override async Task OnInitializedAsync()
+    {
+        CrearFormulario(new Cliente());
+        GrifoContext.GrifoCambiado += OnGrifoCambiado;
+        await CargarCatalogosAsync();
+    }
+
+    // Se ejecuta también al pasar de /clientes/5 a /clientes/nuevo (Blazor reutiliza el componente)
+    protected override async Task OnParametersSetAsync()
+    {
+        mensajeExito = null;
+        mensajeError = null;
+        await CargarClienteAsync();
+    }
+
+    private async Task CargarClienteAsync()
+    {
+        clienteNoEncontrado = false;
+        if (!EsEdicion)
+        {
+            CrearFormulario(new Cliente { IM_LIMI_CRED = limiteCreditoPorDefecto });
+            return;
+        }
+
+        cargando = true;
+        try
+        {
+            var encontrado = await ClienteRepository.ObtenerAsync(Codigo!.Value);
+            clienteNoEncontrado = encontrado is null;
+            if (encontrado is not null) CrearFormulario(encontrado);
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo cargar el cliente: {ex.Message}";
+        }
+        finally
+        {
+            cargando = false;
+        }
+    }
+
+    private void CrearFormulario(Cliente datos)
+    {
+        cliente = datos;
+        editContext = new EditContext(cliente);
+        mensajes = new ValidationMessageStore(editContext);
+        // Al corregir un campo se borra el error que vino de la base de datos
+        editContext.OnFieldChanged += (_, e) => mensajes.Clear(e.FieldIdentifier);
+        duplicados = Array.Empty<ClienteDuplicado>();
+        mostrarAlertaDuplicado = false;
+        ultimaVerificacion = null;
+    }
+
+    private async Task CargarCatalogosAsync()
+    {
+        try
+        {
+            tiposCliente = await ClienteRepository.GetTiposClienteAsync();
+            tiposEmision = await ClienteRepository.GetTiposEmisionAsync();
+            limiteCreditoPorDefecto = await ClienteRepository.GetLimiteCreditoPorDefectoAsync();
+            if (!EsEdicion) cliente.IM_LIMI_CRED = limiteCreditoPorDefecto;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudieron cargar los catálogos: {ex.Message}";
+        }
+    }
+
+    // Al salir del RUC, DNI, razón social o nombre: avisa en el momento si el cliente ya existe
+    private async Task VerificarDuplicadosAsync()
+    {
+        var esJuridica = cliente.TipoPersona == TipoPersona.Juridica;
+        var documento = esJuridica ? cliente.NU_RUC?.Trim() : cliente.NU_DOCU_IDEN?.Trim();
+        var documentoCompleto = esJuridica
+            ? Sisges.Domain.Common.DocumentoIdentidad.EsRucValido(documento)
+            : Sisges.Domain.Common.DocumentoIdentidad.EsDniValido(documento);
+        var razonSocial = cliente.RazonSocialParaGrabar();
+
+        // Sin documento completo ni razón social no hay nada que comparar todavía
+        if (!documentoCompleto && razonSocial.Length < 3) return;
+
+        var clave = documento + "|" + razonSocial;
+        if (clave == ultimaVerificacion) return;
+        ultimaVerificacion = clave;
+
+        try
+        {
+            await MostrarDuplicadosAsync();
+        }
+        catch (Exception)
+        {
+            // La verificación definitiva se hace al guardar
+        }
+    }
+
+    // Devuelve true si hay duplicados (y los muestra en la alerta y bajo los campos)
+    private async Task<bool> MostrarDuplicadosAsync()
+    {
+        duplicados = await ClienteRepository.BuscarDuplicadosAsync(cliente);
+        if (duplicados.Count == 0) return false;
+
+        var esJuridica = cliente.TipoPersona == TipoPersona.Juridica;
+        var campoDocumento = editContext.Field(esJuridica ? nameof(Cliente.NU_RUC) : nameof(Cliente.NU_DOCU_IDEN));
+        var campoNombre = editContext.Field(esJuridica ? nameof(Cliente.NU_RSOC) : nameof(Cliente.NO_CLIE));
+        mensajes.Clear(campoDocumento);
+        mensajes.Clear(campoNombre);
+        if (duplicados.Any(CoincideDocumento))
+            mensajes.Add(campoDocumento, esJuridica ? "El RUC ya está registrado como cliente." : "El DNI ya está registrado como cliente.");
+        if (duplicados.Any(CoincideRazonSocial))
+            mensajes.Add(campoNombre, "Ya existe un cliente con esa razón social.");
+        editContext.NotifyValidationStateChanged();
+
+        mostrarAlertaDuplicado = true;
+        return true;
+    }
+
+    private async Task GuardarAsync()
+    {
+        guardando = true;
+        mensajeError = null;
+        mensajeExito = null;
+        mensajes.Clear();
+
+        try
+        {
+            if (!await ValidarEnBaseDeDatosAsync())
+            {
+                editContext.NotifyValidationStateChanged();
+                return;
+            }
+
+            if (EsEdicion)
+            {
+                await ClienteRepository.ActualizarAsync(cliente, UsuarioActual);
+                mensajeExito = $"Cliente {cliente.CO_CLIE} actualizado correctamente.";
+            }
+            else
+            {
+                var codigo = await ClienteRepository.RegistrarAsync(cliente, UsuarioActual);
+                CrearFormulario(new Cliente { IM_LIMI_CRED = limiteCreditoPorDefecto });
+                mensajeExito = $"Cliente registrado correctamente con código {codigo}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            mensajeError = $"No se pudo grabar el cliente: {ex.Message}";
+        }
+        finally
+        {
+            guardando = false;
+        }
+    }
+
+    // Validaciones de tobMante_ButtonClick (mnuGuardar) del original, más el control de duplicados
+    // por RUC/DNI o razón social que el original no hace bien (SP_TCDOCU_COMB_Q09)
+    private async Task<bool> ValidarEnBaseDeDatosAsync()
+    {
+        if (cliente.TipoPersona == TipoPersona.Juridica)
+        {
+            var ruc = cliente.NU_RUC!.Trim();
+
+            if (!await ClienteRepository.EsDocumentoValidoAsync(ruc))
+            {
+                mensajes.Add(editContext.Field(nameof(Cliente.NU_RUC)), "El documento no es válido para SUNAT.");
+                return false;
+            }
+
+            var razonSocial = await ClienteRepository.NormalizarRazonSocialAsync(cliente.NU_RSOC!);
+            if (razonSocial.Length < 3)
+            {
+                mensajes.Add(editContext.Field(nameof(Cliente.NU_RSOC)), "La razón social tiene caracteres no permitidos.");
+                return false;
+            }
+            cliente.NU_RSOC = razonSocial;
+        }
+
+        return !await MostrarDuplicadosAsync();
+    }
+
+    private bool CoincideDocumento(ClienteDuplicado d) => cliente.TipoPersona == TipoPersona.Juridica
+        ? string.Equals(d.NU_RUC?.Trim(), cliente.NU_RUC?.Trim(), StringComparison.Ordinal)
+        : string.Equals(d.NU_DOCU_IDEN?.Trim(), cliente.NU_DOCU_IDEN?.Trim(), StringComparison.Ordinal);
+
+    private bool CoincideRazonSocial(ClienteDuplicado d) =>
+        string.Equals(d.NU_RSOC?.Trim(), cliente.RazonSocialParaGrabar(), StringComparison.OrdinalIgnoreCase);
+
+    private string Coincidencias(ClienteDuplicado d)
+    {
+        var partes = new List<string>();
+        if (CoincideDocumento(d)) partes.Add(cliente.TipoPersona == TipoPersona.Juridica ? "RUC" : "DNI");
+        if (CoincideRazonSocial(d)) partes.Add("razón social");
+        return string.Join(" y ", partes);
+    }
+
+    private static string DocumentoTexto(ClienteDuplicado d) =>
+        !string.IsNullOrWhiteSpace(d.NU_RUC) ? "RUC " + d.NU_RUC.Trim()
+        : !string.IsNullOrWhiteSpace(d.NU_DOCU_IDEN) ? "DNI " + d.NU_DOCU_IDEN.Trim()
+        : "Sin documento";
+
+    private static string RutaEditar(int codigo) => "mantenimientos/clientes/" + codigo;
+
+    private void CerrarAlerta() => mostrarAlertaDuplicado = false;
+
+    private void Nuevo()
+    {
+        CrearFormulario(new Cliente { IM_LIMI_CRED = limiteCreditoPorDefecto });
+        mensajeExito = null;
+        mensajeError = null;
+    }
+
+    private void OnGrifoCambiado()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            // El código de cliente es de la base del grifo anterior: se vuelve a la lista
+            if (EsEdicion)
+            {
+                Navigation.NavigateTo("mantenimientos/clientes");
+                return;
+            }
+
+            // Los catálogos y el límite por defecto son de cada base de datos
+            mensajeError = null;
+            mensajeExito = null;
+            await CargarCatalogosAsync();
+            CrearFormulario(new Cliente { IM_LIMI_CRED = limiteCreditoPorDefecto });
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        GrifoContext.GrifoCambiado -= OnGrifoCambiado;
+    }
+}

@@ -1,0 +1,342 @@
+@page "/ventas/depositos-tarjetas"
+@using System.Globalization
+@using Sisges.Domain.Common.Interfaces
+@using Sisges.Domain.Entities
+@inject IReporteCajaRepository ReporteCajaRepository
+@inject IAdminDocumentosRepository AdminDocumentosRepository
+@inject IEmpresaRepository EmpresaRepository
+@inject ISqlConnectionFactory ConnectionFactory
+@inject IGrifoContext GrifoContext
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Reporte Depósitos / Tarjetas - SISGES</PageTitle>
+
+<!-- ═══════════════ CABECERA DE PÁGINA ═══════════════ -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3 d-print-none">
+    <div class="min-w-0">
+        <h4 class="fw-bold mb-0 text-body-emphasis">
+            <i class="bi bi-credit-card-2-back text-primary me-2"></i>Reporte Depósitos / Tarjetas
+        </h4>
+        <small class="text-body-secondary">Control de Ventas · reemplaza a <code>frmRepEntre_Tarje</code> · @GrifoContext.GrifoActivoId</small>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary btn-sm" type="button" @onclick="ImprimirAsync" disabled="@(!HayDatos)">
+            <i class="bi bi-printer me-1"></i>Imprimir
+        </button>
+        <button class="btn btn-outline-success btn-sm" type="button" @onclick="ExportarCsvAsync" disabled="@(!HayDatos)">
+            <i class="bi bi-filetype-csv me-1"></i>Exportar Excel (CSV)
+        </button>
+    </div>
+</div>
+
+<!-- ═══════════════ FILTROS (equivalen al formulario original) ═══════════════ -->
+<div class="card shadow-sm border-0 mb-4 d-print-none">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-xl-6">
+                <label class="form-label small fw-semibold text-body-secondary mb-1">Reporte</label>
+                <div class="btn-group w-100 flex-wrap" role="group" aria-label="Tipo de reporte">
+                    @foreach (var (valor, texto, icono) in opcionesTipo)
+                    {
+                        <input type="radio" class="btn-check" name="tipo" id="tipo-@valor" autocomplete="off"
+                               checked="@(tipo == valor)" @onchange="() => tipo = valor" />
+                        <label class="btn btn-outline-primary btn-sm" for="tipo-@valor"><i class="bi @icono me-1"></i>@texto</label>
+                    }
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3 col-xl-2">
+                <label for="fecha" class="form-label small fw-semibold text-body-secondary mb-1">@(EsResumen ? "Desde" : "Fecha turno")</label>
+                <input id="fecha" type="date" class="form-control form-control-sm" @bind="fecha" />
+            </div>
+
+            @if (EsResumen)
+            {
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label for="hasta" class="form-label small fw-semibold text-body-secondary mb-1">Hasta</label>
+                    <input id="hasta" type="date" class="form-control form-control-sm" @bind="hasta" />
+                </div>
+                <div class="col-12 col-md-6 col-xl-2">
+                    <label class="form-label small fw-semibold text-body-secondary mb-1">Presentación</label>
+                    <div class="btn-group w-100" role="group" aria-label="Presentación">
+                        <input type="radio" class="btn-check" name="presentacion" id="pres-res" autocomplete="off"
+                               checked="@(!detallado)" @onchange="() => detallado = false" />
+                        <label class="btn btn-outline-primary btn-sm" for="pres-res">Resumen</label>
+                        <input type="radio" class="btn-check" name="presentacion" id="pres-det" autocomplete="off"
+                               checked="@detallado" @onchange="() => detallado = true" />
+                        <label class="btn btn-outline-primary btn-sm" for="pres-det">Detallado</label>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="col-6 col-md-3 col-xl-2">
+                    <label for="turno" class="form-label small fw-semibold text-body-secondary mb-1">Turno</label>
+                    <select id="turno" class="form-select form-select-sm" @bind="turno">
+                        <option value="0">Todos los turnos</option>
+                        @foreach (var t in turnos)
+                        {
+                            <option value="@t.Codigo">@t.Codigo - @t.Descripcion</option>
+                        }
+                    </select>
+                </div>
+            }
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mt-3 pt-3 border-top">
+            <div class="d-flex flex-wrap gap-2 align-items-center small">
+                <span class="text-body-secondary">Rápido:</span>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => FijarFecha(0)">Turno actual</button>
+                <span class="text-body-tertiary">·</span>
+                <button type="button" class="btn btn-link btn-sm p-0" @onclick="() => FijarFecha(-1)">Día anterior</button>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm px-4 ms-auto" @onclick="ProcesarAsync" disabled="@cargando">
+                @if (cargando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status"></span><span>Procesando...</span>
+                }
+                else
+                {
+                    <i class="bi bi-play-fill me-1"></i><span>Procesar</span>
+                }
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(mensajeError))
+{
+    <div class="alert alert-danger d-flex align-items-start d-print-none" role="alert">
+        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+        <div class="text-break">@mensajeError</div>
+    </div>
+}
+
+@if (cargando)
+{
+    <div class="text-center py-5 text-body-secondary d-print-none">
+        <div class="spinner-border text-primary" role="status"></div>
+    </div>
+}
+else if (filtroAplicado is not null && !HayDatos)
+{
+    <div class="card shadow-sm border-0">
+        <div class="card-body text-center py-5 text-body-secondary">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            No se tiene información para mostrar.
+        </div>
+    </div>
+}
+else if (HayDatos && filtroAplicado is not null)
+{
+    <!-- ═══════════════ CABECERA IMPRESA ═══════════════ -->
+    <div class="reporte-cabecera-impresion d-none d-print-flex">
+        <div>
+            <div class="fw-bold">@nombreEmpresa</div>
+            <div class="small">@nombreEstacion</div>
+        </div>
+        <div class="text-center">
+            <div class="fw-bold fs-5">@TituloReporte(filtroAplicado)</div>
+            <div class="fw-bold">@SubtituloFiltro(filtroAplicado)</div>
+        </div>
+        <div class="text-end small">
+            <div>F.Emisión: @fechaProceso.ToString("dd/MM/yyyy")</div>
+            <div>H.Emisión: @fechaProceso.ToString("hh:mm:ss tt", CultureInfo.InvariantCulture)</div>
+        </div>
+    </div>
+
+    <div class="d-print-none mb-3">
+        <span class="fw-semibold text-body-emphasis">@TituloReporte(filtroAplicado)</span>
+        <span class="text-body-secondary small ms-2">@SubtituloFiltro(filtroAplicado)</span>
+    </div>
+
+    <!-- ═══════════════ KPIs ═══════════════ -->
+    <div class="row g-3 mb-4 d-print-none">
+        @if (filtroAplicado.Tipo != TipoReporteDepositos.Depositos)
+        {
+            <div class="col-6 col-lg-3">
+                <div class="card border-0 shadow-sm h-100 text-white bg-widget-primary"><div class="card-body">
+                    <div class="small text-white-50 text-uppercase fw-semibold">Total tarjetas</div>
+                    <div class="fs-4 fw-bold">S/ @totalTarjetas.ToString("N2", Cultura)</div>
+                </div></div>
+            </div>
+            @if (cantidadVouchers > 0)
+            {
+                <div class="col-6 col-lg-3">
+                    <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                        <div class="small text-body-secondary text-uppercase fw-semibold">Vouchers</div>
+                        <div class="fs-4 fw-bold text-body-emphasis">@cantidadVouchers.ToString("N0", Cultura)</div>
+                    </div></div>
+                </div>
+            }
+        }
+        @if (filtroAplicado.Tipo is TipoReporteDepositos.Todo or TipoReporteDepositos.Depositos)
+        {
+            <div class="col-6 col-lg-3">
+                <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-body-secondary text-uppercase fw-semibold">Depósitos S/</div>
+                    <div class="fs-4 fw-bold text-body-emphasis">@totalSoles.ToString("N2", Cultura)</div>
+                </div></div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="small text-body-secondary text-uppercase fw-semibold">Depósitos US$</div>
+                    <div class="fs-4 fw-bold text-body-emphasis">@totalDolares.ToString("N2", Cultura)</div>
+                </div></div>
+            </div>
+        }
+    </div>
+
+    @* ═══════════════ RESUMEN POR TARJETA (todas las opciones con tarjetas) ═══════════════ *@
+    @if (resumenTarjetas.Count > 0)
+    {
+        <div class="card shadow-sm border-0 mb-4 reporte-bloque">
+            <div class="card-header py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-credit-card text-primary me-2"></i>Resumen por tarjeta</h6>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 reporte-tabla">
+                    <thead class="table-head-themed">
+                        <tr>
+                            <th>Tarjeta</th>
+                            @foreach (var t in turnosResumen)
+                            {
+                                <th class="text-end">Turno @t</th>
+                            }
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in resumenTarjetas)
+                        {
+                            <tr>
+                                <td>@r.Tarjeta</td>
+                                @foreach (var t in turnosResumen)
+                                {
+                                    <td class="text-end font-monospace">@Monto(r.PorTurno.GetValueOrDefault(t))</td>
+                                }
+                                <td class="text-end font-monospace fw-semibold">@r.Total.ToString("N2", Cultura)</td>
+                            </tr>
+                        }
+                        <tr class="fila-total">
+                            <td>TOTAL</td>
+                            @foreach (var t in turnosResumen)
+                            {
+                                <td class="text-end font-monospace">@Monto(resumenTarjetas.Sum(r => r.PorTurno.GetValueOrDefault(t)))</td>
+                            }
+                            <td class="text-end font-monospace">@totalTarjetas.ToString("N2", Cultura)</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @* ═══════════════ VOUCHERS POR GRIFERO ("Todo") o DETALLE ("Resumen Tarjetas" detallado) ═══════════════ *@
+    @if (vouchersPorGrifero.Count > 0)
+    {
+        <div class="card shadow-sm border-0 mb-4 reporte-bloque">
+            <div class="card-header py-3 border-bottom d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-person-badge text-primary me-2"></i>Vouchers por grifero</h6>
+                <input class="form-control form-control-sm w-auto d-print-none" placeholder="Filtrar: grifero, tarjeta, voucher, documento..."
+                       @bind="busqueda" @bind:event="oninput" />
+            </div>
+            <div class="table-responsive reporte-scroll">
+                <table class="table table-sm align-middle mb-0 reporte-tabla text-nowrap">
+                    <thead class="table-head-themed">
+                        <tr>
+                            @if (MostrarFecha)
+                            {
+                                <th>Fecha</th>
+                            }
+                            <th class="text-center">Turno</th>
+                            <th>Tarjeta</th>
+                            <th>Voucher</th>
+                            @if (MostrarDocumento)
+                            {
+                                <th>Documento</th>
+                            }
+                            <th class="text-end">Importe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var g in GriferosFiltrados)
+                        {
+                            <tr class="fila-grupo">
+                                <td colspan="@ColumnasVoucher">@g.Grifero <span class="text-body-secondary fw-normal small ms-1">(@g.Vouchers.Count)</span></td>
+                            </tr>
+                            @foreach (var v in g.Vouchers)
+                            {
+                                <tr>
+                                    @if (MostrarFecha)
+                                    {
+                                        <td class="font-monospace small">@v.Fecha</td>
+                                    }
+                                    <td class="text-center">@v.Turno</td>
+                                    <td>@v.Tarjeta</td>
+                                    <td class="font-monospace">@v.Numero</td>
+                                    @if (MostrarDocumento)
+                                    {
+                                        <td class="font-monospace small">@v.Documento</td>
+                                    }
+                                    <td class="text-end font-monospace">@v.Importe.ToString("N2", Cultura)</td>
+                                </tr>
+                            }
+                            <tr class="fila-subtotal">
+                                <td colspan="@(ColumnasVoucher - 1)" class="text-end">Subtotal @g.Grifero</td>
+                                <td class="text-end font-monospace">@g.Vouchers.Sum(v => v.Importe).ToString("N2", Cultura)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @* ═══════════════ DEPÓSITOS / ENTREGAS DE EFECTIVO ═══════════════ *@
+    @if (filtroAplicado.Tipo is TipoReporteDepositos.Todo or TipoReporteDepositos.Depositos)
+    {
+        <div class="card shadow-sm border-0 mb-4 reporte-bloque">
+            <div class="card-header py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-body-emphasis"><i class="bi bi-cash-stack text-primary me-2"></i>Depósitos (entregas de efectivo)</h6>
+            </div>
+            @if (depositos.Count == 0)
+            {
+                <div class="card-body text-body-secondary small">No hay entregas de efectivo registradas en soles ni en dólares para esta fecha.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 reporte-tabla">
+                        <thead class="table-head-themed">
+                            <tr>
+                                <th>@(filtroAplicado.Tipo == TipoReporteDepositos.Todo ? "Grifero" : "Moneda")</th>
+                                <th class="text-center">Turno</th>
+                                <th class="text-end">Soles</th>
+                                <th class="text-end">Dólares</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in depositos)
+                            {
+                                <tr>
+                                    <td>@d.Descripcion</td>
+                                    <td class="text-center">@d.Turno</td>
+                                    <td class="text-end font-monospace">@Monto(d.Soles)</td>
+                                    <td class="text-end font-monospace">@Monto(d.Dolares)</td>
+                                </tr>
+                            }
+                            <tr class="fila-total">
+                                <td colspan="2">TOTAL</td>
+                                <td class="text-end font-monospace">@totalSoles.ToString("N2", Cultura)</td>
+                                <td class="text-end font-monospace">@totalDolares.ToString("N2", Cultura)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+}

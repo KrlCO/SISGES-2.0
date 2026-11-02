@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sisges-web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "SISGES_V2.0/SISGES/Sisges.Web", "--launch-profile", "http"],
+      "port": 5078
+    }
+  ]
+}
